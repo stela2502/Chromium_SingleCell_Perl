@@ -53,13 +53,14 @@ print "Execution time: $duration s\n";
 #when dropping samples with not a single match to the transcriptome
 #Finished with mapping: 2123 samples and 2 gene_id's detected
 #Execution time: 3 s
-
-foreach ( 'test.merge.log','test.original.xls','test.spliced.xls', 'test.xls.log',
-'test.original_merged.xls', 'test.samples.xls', 'test.xls'
+@values = undef;
+foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',
+'test.original_merged.xls'
 ) {
 	ok ( -f "$outpath/$_", "outfile $_");
+	push ( @values , "$outpath/$_");
 }
-
+system( "wc ". join(" ", @values));
 
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";

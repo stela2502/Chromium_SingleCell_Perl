@@ -14,6 +14,7 @@ git clone git@github.com:stela2502/Chromium_SingleCell_Perl.git
 cd Chromium_SingleCell_Perl
 
 make
+
 make install
 
 The make test will fail as the test scripts need update - I am sorry.
