@@ -31,14 +31,14 @@ $outfile = "$outpath/test.xls";
 #with umi and sample merge: 16224 samples and 4 genes detected
 
 # with only 4 geens we are down to only half the samples.
-
+@options = ('min_UMIs', 10 );
 
 my $cmd =
     "perl -I $plugin_path/../lib  $exec "
 . " -gtf_file " . $gtf_file 
 . " -infile " . $infile 
 . " -outfile " . $outfile 
-#. " -options " . join(' ', @options )
+. " -options " . join(' ', @options )
 . " -debug"
 ;
 

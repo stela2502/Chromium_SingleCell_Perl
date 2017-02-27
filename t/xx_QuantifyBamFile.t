@@ -60,11 +60,14 @@ print "Execution time: $duration s\n";
 #Done
 #Execution time: 25 s
 
-foreach ( 'test.merge.log','test.original.xls','test.spliced.xls', 'test.xls.log',
-'test.original_merged.xls', 'test.samples.xls', 'test.xls'
+@values = undef;
+foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',
+'test.original_merged.xls'
 ) {
 	ok ( -f "$outpath/$_", "outfile $_");
+	push ( @values , "$outpath/$_");
 }
+system( "wc ". join(" ", @values));
 
 
 
