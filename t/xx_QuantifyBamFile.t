@@ -32,13 +32,14 @@ $outfile = "$outpath/test.xls";
 
 # with only 4 geens we are down to only half the samples.
 
+@options = ('min_UMIs', 10 );
 
 my $cmd =
     "perl -I $plugin_path/../lib  $exec "
 . " -gtf_file " . $gtf_file 
 . " -infile " . $infile 
 . " -outfile " . $outfile 
-#. " -options " . join(' ', @options )
+. " -options " . join(' ', @options )
 . " -debug"
 ;
 
@@ -59,6 +60,16 @@ print "Execution time: $duration s\n";
 #Finished with mapping: 15 samples and 4 gene_id's detected
 #Done
 #Execution time: 25 s
+
+## After using PDL for the computational stuff and min_umi 100
+##Finished with mapping: 161 samples and 4 gene_id's detected
+##Done
+##Execution time: 17 s
+
+## After using PDL for the computational stuff and min_umi 10
+##Finished with mapping: 646 samples and 4 gene_id's detected
+##Done
+##Execution time: 19 s
 
 @values = undef;
 foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',

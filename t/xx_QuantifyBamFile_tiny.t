@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 10;
+use Test::More tests => 11;
 use stefans_libs::flexible_data_structures::data_table;
 
 use FindBin;
@@ -53,14 +53,19 @@ print "Execution time: $duration s\n";
 #when dropping samples with not a single match to the transcriptome
 #Finished with mapping: 2123 samples and 2 gene_id's detected
 #Execution time: 3 s
-@values = undef;
+@values = ();
 foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',
-'test.original_merged.xls'
+'test.original_merged.xls', 'test.merge_report.txt'
 ) {
 	ok ( -f "$outpath/$_", "outfile $_");
 	push ( @values , "$outpath/$_");
 }
 system( "wc ". join(" ", @values));
 
+open ( RSC , ">$outpath/load.R" ) or die "Could not create the sample R load script.\n$!\n";
+print RSC "library(StefansExpressionSet)\n"."data <- read.delim('$outpath/test.xls' )\n"."samples <- read.delim('$outpath/test.samples.xls' )\n"
+. " t <- SingleCellsNGS( dat = data, Samples=samples, namecol='X.sample.tag')\n";
+
+close ( RSC);
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
