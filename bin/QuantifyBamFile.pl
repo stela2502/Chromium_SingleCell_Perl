@@ -124,7 +124,7 @@ for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 
 $options->{'quantify_on'} ||= 'exon';
 $options->{'report_on'}   ||= 'gene_id';
-$options->{'min_UMIs'}    ||=  100;
+$options->{'min_UMIs'}    ||= 100;
 
 ###
 
@@ -145,7 +145,6 @@ mkdir( $fm->{'path'} ) unless ( -d $fm->{'path'} );
 open( LOG, ">$outfile.log" ) or die $!;
 print LOG $task_description . "\n";
 
-
 ## Do whatever you want!
 
 my $bam_file = stefans_libs::BAMfile->new();
@@ -153,7 +152,7 @@ my $result   = data_table->new();
 $result->Add_2_Header('Gene_ID');
 $result->createIndex('Gene_ID');
 
-my $start = time;
+my $start       = time;
 my $first_start = $start;
 
 my $gtf_obj = stefans_libs::file_readers::gtf_file->new();
@@ -184,9 +183,15 @@ my $adds = 0;
 my $UMI;
 
 sub measure_time_and_state {
-	my ( $msg ) = @_;
+	my ($msg) = @_;
 	$duration = time - $start;
-	$duration = (($duration/(60*60))%24) . " hours, ".(($duration/60)%60)." min and ".($duration%60)." seconds";
+	$duration =
+	    ( ( $duration / ( 60 * 60 ) ) % 24 )
+	  . " hours, "
+	  . ( ( $duration / 60 ) % 60 )
+	  . " min and "
+	  . ( $duration % 60 )
+	  . " seconds";
 	print "$msg took: $duration s\n";
 	print LOG "$msg took: $duration s\n";
 	$start = time;
@@ -328,101 +333,165 @@ if ($debug) {
 }
 
 $runs = 0;
-print
-"\nFinished with quantification (".$sample_table->Rows()." samples and ".$result->Rows()." genes)\n";
+print "\nFinished with quantification ("
+  . $sample_table->Rows()
+  . " samples and "
+  . $result->Rows()
+  . " genes)\n";
 
 ## calculate the sample UMI count and add it to the summary table
-
 
 if ($debug) {
 	$sample_table->write_table( $tmp . "sample_table_original" );
 	&measure_time_and_state("DEBUG: Writing of the raw data files");
 }
 
-
 print "Syncing sample table and data table\n";
 my $i = 0;
-$self->{'samples_in_result'} = { map {$_ => $i ++} @{ $result->{'header'} } };
+$self->{'samples_in_result'} = { map { $_ => $i++ } @{ $result->{'header'} } };
 
-$sample_table->drop_rows( 'sample tag', sub{ ! defined $self->{'samples_in_result'}->{$_[0]} } );
+$sample_table->drop_rows( 'sample tag',
+	sub { !defined $self->{'samples_in_result'}->{ $_[0] } } );
 
 if ($debug) {
 	$sample_table->write_table( $tmp . "sample_table_only_used_samples" );
 }
 
-$sample_table = $sample_table->Sort_by([ [  'sample tag', $self->{'samples_in_result'} ] ] );
+$sample_table =
+  $sample_table->Sort_by( [ [ 'sample tag', $self->{'samples_in_result'} ] ] );
 
-
-if ( $debug ){
+if ($debug) {
 	my $tmp_table = data_table->new();
-	$tmp_table -> Add_2_Header( ['samples', 'results'] );
-	my $OK =1;
-	for ( my $i = 0; $i < $sample_table->Columns();$i ++ ){
+	$tmp_table->Add_2_Header( [ 'samples', 'results' ] );
+	my $OK = 1;
+	for ( my $i = 0 ; $i < $sample_table->Columns() ; $i++ ) {
+
 		#print "new entry in $tmp_table->{'data'} at position $i = \n";
 		#print "\t [ \n\n\t\t".@{@{$sample_table->{'data'}}[$i]}[0].", \n";
 		#print "\t\t".@{$result->{'header'}}[($i*2) +1 ]." ];\n";
-		@{$tmp_table->{'data'}}[$i] = [ @{@{$sample_table->{'data'}}[$i]}[0], @{$result->{'header'}}[($i*2) +1 ] ];
-		$OK = 0 unless ( @{@{$sample_table->{'data'}}[$i]}[0] eq @{$result->{'header'}}[ ($i*2) +1 ] );
+		@{ $tmp_table->{'data'} }[$i] = [
+			@{ @{ $sample_table->{'data'} }[$i] }[0],
+			@{ $result->{'header'} }[ ( $i * 2 ) + 1 ]
+		];
+		$OK = 0
+		  unless ( @{ @{ $sample_table->{'data'} }[$i] }[0] eq
+			@{ $result->{'header'} }[ ( $i * 2 ) + 1 ] );
 	}
-	die "The order has not been chenged in the right way!\n" unless ( $OK );
+	die "The order has not been chenged in the right way!\n" unless ($OK);
 }
 
 $sample_table->write_table( $tmp . "sample_table_original" );
 
 &measure_time_and_state("Syncing the sample and data tables");
 
-delete( $result->{'index_length'}->{'Gene_ID'});
-delete( $result->{'index'}->{'Gene_ID'});
+delete( $result->{'index_length'}->{'Gene_ID'} );
+delete( $result->{'index'}->{'Gene_ID'} );
 
 my $Gene_IDs = $result->GetAsArray('Gene_ID');
 $result->drop_column('Gene_ID');
-foreach ( keys %{$self->{'samples_in_result'}} ){
-	$self->{'samples_in_result'}->{$_} --;
+foreach ( keys %{ $self->{'samples_in_result'} } ) {
+	$self->{'samples_in_result'}->{$_}--;
 }
-$| = 1; 
-print "Calculating colum sums for ". ($sample_table->Rows()/2)." samples:\n";
+$| = 1;
+print "Calculating colum sums for "
+  . ( $sample_table->Rows() / 2 )
+  . " samples:\n";
 my $data_col_name;
 
+## considder to use use PDL::Sparse; here andset the none 0 values 'by hand'
+## should be faster that the 30 min it takes to create the full PDL (276318 x 16876) piddle.
+$self->{PDL}      = long( @{ $result->{'data'} } );
+$self->{PDL}      = $self->{PDL}->transpose();
+$result->{'data'} = undef;
 
-$self->{PDL} = $result->GetAsPDL();
+#$result->GetAsPDL();
 
 &measure_time_and_state("Creating the PDL");
 
 my $sums = $self->{PDL}->sumover();
 $sums = unpdl($sums);
 
-$sample_table->add_column( 'total UMI count', @$sums[( map{$_ * 2 } 0..($sample_table->Rows()-1) )] );
-$sample_table->add_column( 'total UMI count no merge', @$sums[( map{$_ * 2 } 0..($sample_table->Rows()-1) )] );
-$sample_table->add_column( 'spliced UMI count', @$sums[ map{$_ * 2 +1} 0..($sample_table->Rows()-1) ] );
-$sample_table->add_column( 'spliced UMI count no merge', @$sums[ map{$_ * 2 +1} 0..($sample_table->Rows()-1) ] );
+$sample_table->add_column( 'total UMI count',
+	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
+$sample_table->add_column( 'total UMI count no merge',
+	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
+$sample_table->add_column( 'spliced UMI count',
+	@$sums[ map { $_ * 2 + 1 } 0 .. ( $sample_table->Rows() - 1 ) ] );
+$sample_table->add_column( 'spliced UMI count no merge',
+	@$sums[ map { $_ * 2 + 1 } 0 .. ( $sample_table->Rows() - 1 ) ] );
 
-&measure_time_and_state("Calculate the sum over ".$sample_table->Rows()." samples" );
+&measure_time_and_state(
+	"Calculate the sum over " . $sample_table->Rows() . " samples" );
 
 ## now I need to merge the samples!
 
 print "\nStarting to merge cells that share a UMI in an exon\n";
 
-$sample_table->Add_2_Header(['merged to','merge evidence'] );
+$sample_table->Add_2_Header( [ 'merged to', 'merge evidence', 'stringdist' ] );
 
-foreach ( @{ $self->{'mergable'} } ) {
-	&merge_cells(@$_);
+foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
+	&merge_cells( split( " ", $_ ) );
 }
-delete($self->{'mergable'});
+delete( $self->{'mergable'} );
 
-&measure_time_and_state("Mering cells where the same UMI tagged the same transcript");
+&measure_time_and_state(
+	"\nMering cells where the same UMI tagged the same transcript");
 
 ## as the new merge function works on the PDL data I now need to copy the pdl data back to the result table
-$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
-$result->add_column( 'Gene_ID', @$Gene_IDs);
 
+my $subsetted_data = data_table->new();
+my @wanted_positions;
+
+my $total_UMI_count =
+  $sample_table->GetAsHash( 'sample tag', 'total UMI count' );
+
+for ( my $i = 0 ; $i < $result->Columns() - 1 ; $i++ ) {
+	unless ( @{ $result->{'header'} }[$i] =~ m/merged/ ) {
+		my $tmp = @{ $result->{'header'} }[$i];
+		$tmp =~ s/ spliced//;
+		$wanted_positions[@wanted_positions] = $i
+		  if ( $total_UMI_count->{$tmp} >= $options->{'min_UMIs'} );
+	}
+}
+
+$subsetted_data->Add_2_Header(
+	[ @{ $result->{'header'} }[@wanted_positions] ] );
+
+if ($debug) {
+	print "I identified these wanted columns from the result table: "
+	  . join( ", ", @wanted_positions[ 0 .. 5 ] )
+	  . "\n ... \n"
+	  . join( ", ",
+		@wanted_positions[ ( @wanted_positions - 6 )
+		  .. ( @wanted_positions - 1 ) ] )
+	  . "\n";
+	print "I selected "
+	  . scalar(@wanted_positions)
+	  . " samples + spliced samples from the original table with the first 10 snames:\n"
+	  . join( ", ", @{ $subsetted_data->{'header'} }[ 0 .. 9 ] )
+	  . "\n ... \n"
+	  . join( ", ",
+		@{ $subsetted_data->{'header'} }
+		  [ ( @wanted_positions - 6 ) .. ( @wanted_positions - 1 ) ] )
+	  . "\n";
+}
+
+$subsetted_data->{'data'} =
+  unpdl( $self->{'PDL'}->xchg( 0, 1 )->dice_axis( 0, \@wanted_positions ) );
+
+#$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
+
+$subsetted_data->add_column( 'Gene_ID', @$Gene_IDs );
+$result        = undef;
+$result        = $subsetted_data;
+$self->{'PDL'} = undef;
 &measure_time_and_state("Restoring data table from merged PDL");
 
 $sample_table->write_table( $tmp . ".samples_after_sum_add.xls" );
 
-$sample_table->drop_rows('merged to', sub{ defined $_[0] } );
+$sample_table->drop_rows( 'merged to', sub { defined $_[0] } );
 
-
-$| = 0; 
+$| = 0;
 
 if ($debug) {
 	open( my $MERGE, ">$tmp.merge.log" ) or die $!;
@@ -439,8 +508,6 @@ if ($debug) {
 	$result->write_table( $tmp . ".original_merged.xls" );
 }
 
-$result->drop_column( [ grep (/merged/, @{$result->{'header'}})]);
-
 print "\ncollapse the data to the unique cells only\n";
 
 ## write the data
@@ -450,38 +517,29 @@ $result->define_subset( 'keep',
 @export      = $result->Header_Position('keep');
 @sampleNames = @{ $result->{'header'} }[@export];
 
-$sample_table = $sample_table->select_where('total UMI count',	sub { ( defined $_[0] and $_[0] > 0 ) } ) ;
+$sample_table = $sample_table->select_where( 'total UMI count',
+	sub { ( defined $_[0] and $_[0] > 0 ) } );
 
-my $columns_to_drop = $sample_table->GetAsHash('sample tag', 'total UMI count');
-$sample_table = $sample_table->select_where('total UMI count',	sub { ( defined $_[0] and $_[0] > $options->{'min_UMIs'}-1 ) });
+$sample_table = $sample_table->select_where( 'total UMI count',
+	sub { ( defined $_[0] and $_[0] >= $options->{'min_UMIs'} ) } );
 
-
-my @columns_to_drop;
-foreach ( keys %$columns_to_drop) {
-	if ( $columns_to_drop->{$_} <  $options->{'min_UMIs'} ) {
-		push ( @columns_to_drop , $_,  "$_ spliced" ) if ( defined $result->Header_Position($_) );
-	}
-}
-## in the test data I have identified 199748 samples with a total of 0 UMIS in a gene - totally useless to keep them!
-## the data table has to be modified in place: drop_columns?
-$result->drop_column( \@columns_to_drop ) if ( @columns_to_drop > 0);
-
-&measure_time_and_state("dropping merged samples from the result and samples tables");
-
+&measure_time_and_state(
+"dropping merged , empty and low read count samples from the result and samples tables"
+);
 
 eval {
-	open ( my $Mreport , ">$tmp.merge_report.txt" );
-	foreach ( keys %{$self->{'cell_id_to_name_md5'}} ){
+	open( my $Mreport, ">$tmp.merge_report.txt" );
+	foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
 		$self->{'cell_id_to_name_md5'}->{$_} ||= 0;
 		print $Mreport "$self->{'cell_id_to_name_md5'}->{$_} $_\n";
 	}
-	close ( $Mreport );
+	close($Mreport);
 };
 
 &measure_time_and_state("Writing the merge report to '$tmp.merge_report.txt'");
 
-
-my $msg= "\nFinished with mapping: "
+my $msg =
+    "\nFinished with mapping: "
   . $sample_table->Rows()
   . " samples and "
   . $result->Rows()
@@ -538,12 +596,13 @@ close($SPLICED);
 
 &measure_time_and_state("Saving data to '$outfile' and '$tmp.spliced.xls'");
 
-close(LOG);
-
-print "Done\n";
 $start = $first_start;
+
 &measure_time_and_state("Total run");
 
+print "Done\n";
+
+close(LOG);
 
 sub get_matching_ids {
 	my ( $gtf, $chr, $start ) = @_;
@@ -606,80 +665,215 @@ sub reinit_UMI {
 	}
 	foreach my $UMI ( keys %$tmp ) {
 		if ( scalar( keys %{ $tmp->{$UMI} } ) > 1 ) {
+
 #warn "I have found a significant sample overlapp ($UMI) in the samples ". join(", ", keys %{$tmp->{$UMI}} )."\n";
-			my $m =  join( " ",sort keys %{ $tmp->{$UMI} } ) ;
-			$self->{'cell_id_to_name_md5'}->{$m} ++;
-			next if ( $self->{'cell_id_to_name_md5'}->{$m} > 1 );
-			push( @{ $self->{'mergable'} }, [sort keys %{ $tmp->{$UMI} } ] );
+			if ( &check_UMI_overlap( keys %{ $tmp->{$UMI} } ) ) {
+				push(
+					@{ $self->{'mergable'} },
+					[ sort keys %{ $tmp->{$UMI} } ]
+				);
+			}
 		}
 	}
 	$self->{'UMI'} = {};
 }
 
+sub check_UMI_overlap {
+	my (@cells) = @_;
+	my ( $m, @ids );
+	$m = 1;
+	map { $m = 0 unless defined $_ } @cells;
+	die "are there not defined cells?: '" . join( "', '", @cells ) . "'\n"
+	  unless ($m);
+	for ( my $i = 0 ; $i < @cells ; $i++ ) {
+		for ( my $a = 1 ; $a < @cells ; $a++ ) {
+			next if ( $cells[$i] eq $cells[$a] );
+			$m = join( " ", sort @cells[ $i, $a ] );
+			$ids[@ids] = $self->{'cell_id_to_name_md5'}->{$m} += 1;
+		}
+	}
+	foreach (@ids) {
+		return 1 if ( $_ == 1 );
+	}
+	return 0;
+}
+
+sub stringdist {
+	my ( $a, $b ) = @_;
+	my @A = split( "", $a );
+	my @B = split( "", $b );
+	my $ret = 0;
+	for ( my $i = 0 ; $i < @A ; $i++ ) {
+		$ret++ unless ( $A[$i] eq $B[$i] );
+	}
+	return $ret;
+}
+
+sub identify_merge_target {
+	my $cname = shift;
+	my $return;
+
+	#warn "\nYou try to identify the merge target for '$cname'\n";
+	eval {
+		($return) =
+		  $sample_table->get_value_for( 'sample tag', $cname, 'merged to' );
+	};
+
+#warn   "                 I got the return value  '$return'  stringdist = ".&stringdist($cname,$return)."\n";
+	unless ( defined $return ) {
+		Carp::confess("Could not identify sample $cname!\n");
+		return undef;
+	}
+	if ( $return =~ m/C_[AGTCN]*/
+		and defined $result->Header_Position($return) )
+	{
+		#warn "identify_merge_target identified the target $cname -> $return\n";
+		return $return;
+	}
+	elsif ( $return =~ m/C_[AGTCN]*/ )
+	{    ## most likely a additional target for this sample
+		 #warn "The secondary target $return has also been merged! - re-init\n";
+		return &identify_merge_target($return);
+	}
+	Carp::confess(
+"identify_merge_target($cname) -> You should not have reached this point! '$return'\n"
+	);
+}
+
 sub merge_cells {
 	return if ( @_ < 2 );
-	if ( $runs % 1e5 == 0 ) {
+	if ( $runs % 1e+5 == 0 ) {
 		print ".";
 	}
+
+	#	if ( $runs % 6e+6 == 0 ) {
+	#		print "\n";
+	#	}
 	my @cells = @_;
-	my $evidence = $self->{'cell_id_to_name_md5'}->{ join(" ", @_) } || 0;
 
 	#warn "I am going to merge the cells:\n\t".join("\n\t", @cells)."\n";
 	## first check that these columns still exist!
-	my @tmp;
-	my @already_merged;
-	foreach (@cells) {
-		if ( defined $result->Header_Position($_) and defined  $sample_table->createIndex( 'sample tag' )->{$_} ){
-			$tmp[@tmp]= $_ ;
-		}else {
-			$already_merged[@already_merged] = $_;
+	my ( @tmp, @already_merged, $mtcol, $lineHash );
+
+	foreach (@cells) {    #the sample has not been merged before
+		if (    defined $result->Header_Position($_)
+			and defined $sample_table->createIndex('sample tag')->{$_} )
+		{
+			$tmp[@tmp] = { 'orig' => $_, 'final' => $_ };
+		}
+		elsif ( defined $sample_table->createIndex('sample tag')->{$_} )
+		{                 ## one partner has been merged before
+			## now we need to try to identify the respective target and check that it is not the other sample
+			$mtcol = &identify_merge_target($_);
+			if ( $mtcol =~ m/C_[AGTCN]*/ ) {
+				$tmp[@tmp] = { 'orig' => $_, 'final' => $mtcol };
+			}
+		}
+		else {
+#warn "I assume one of the partners had not a single unique mapped read and was therefore not kept:".join(", ", @cells)."\n";
+			return;
 		}
 	}
+	@tmp = &unique_cell_hashes(@tmp);
 	if ( @tmp < 2 ) {
+		warn "I could not merge the cells "
+		  . join( ", ", @cells )
+		  . " as I only identified "
+		  . scalar(@tmp)
+		  . " rows I could merge\n";
 		return;
 	}
 	@cells = @tmp;
-	#Carp::confess ( "is this a real index?". root->print_perl_var_def( 
-	#{index => $sample_table->createIndex( 'sample tag' ) } )."\n");
-	
-	my @sums = map{$sample_table->get_value_for( 'sample tag', $_, 'total UMI count' ) } @cells;
-	#warn "the sums: '".join("', '", @sums ) ."'\n";
+
+	#Carp::confess ( "is this a real sable cell has array?". root->print_perl_var_def( @cells)."\n");
+
+	my @sums = map {
+		$sample_table->get_value_for(
+			'sample tag',
+			$_->{'final'},
+			'total UMI count'
+		  );
+	} @cells;
+	             #warn "the sums: '".join("', '", @sums ) ."'\n";
 	my $max = &lmax(@sums);
-	my ( $main_cell, $position, @slave_cols);
+	my ( $main_cell, $position, @slave_cols, $line_id );
 	for ( my $i = 0 ; $i < @sums ; $i++ ) {
 		if ( $sums[$i] == $max ) {
 			$position  = $i;
 			$main_cell = $cells[$i];
-			splice( @cells, $i ,1); ## kick the merge target
+			splice( @cells, $i, 1 );    ## kick the merge target
 			last;
 		}
 	}
 	$sample_table->set_value_for( 'sample tag', $main_cell, 'total UMI count',
 		&lsum(@sums) );
-	map { 
-		$sample_table->set_value_for( 'sample tag', $_ , 'merged to', $main_cell );
-		$sample_table->set_value_for( 'sample tag', $_ , 'merge evidence', $evidence );
-	} @cells;
-	
-#	Carp::confess "\$exp = ".root->print_perl_var_def( {
-#		'PDL shape' => unpdl ( $self->{'PDL'}->shape()),
-#		'samples_table shape' => [ $sample_table->Columns, $sample_table->Rows()],
-#		
-#		'target' => unpdl( $self->{'PDL'}->slice(":,".$self->{'samples_in_result'}->{$main_cell})   ),
-#		'add' =>  unpdl( $self->{'PDL'}->slice(":,(".join(",",map{$self->{'samples_in_result'}->{$_}} @cells).")") ),
-#		
-#		'cells' => [$main_cell, @cells],
-#		'cells_using_results_location' => [@{$result->{'header'}}[map{$self->{'samples_in_result'}->{$_}}$main_cell, @cells] ],
-#		'PDL_a' => ":,".$self->{'samples_in_result'}->{$main_cell},
-#		'PDL_b'=> ":,(".join(",",map{$self->{'samples_in_result'}->{$_}} @cells).")",
-#	} ).";\n"; 
-	$self->{'PDL'}->slice(":,".$self->{'samples_in_result'}->{$main_cell}) += 
-		$self->{'PDL'}->slice(":,".join(":",map{$self->{'samples_in_result'}->{$_}} @cells));
-		
-	$self->{'PDL'}->slice(":,".$self->{'samples_in_result'}->{$main_cell. " spliced"}) += 
-		$self->{'PDL'}->slice(":,".join(":",map{$self->{'samples_in_result'}->{$_. " spliced"}} @cells));
+	map {
+		$lineHash = $sample_table->get_line_asHash(
+			$line_id = $sample_table->get_rowNumbers_4_columnName_and_Entry(
+				'sample tag', $_->{'orig'}
+			)
+		);
+		$lineHash->{'merged to'}      = $main_cell->{'final'};
+		$lineHash->{'merge evidence'} = $self->{'cell_id_to_name_md5'}
+		  ->{ join( " ", sort $main_cell->{'orig'}, $_->{'orig'} ) };
+		$lineHash->{'stringdist'} =
+		  &stringdist( $main_cell->{'final'}, $_->{'final'} );
+		$lineHash->{'mapped	in gene'} ||= 1;
+		if ( $lineHash->{'merge evidence'} / $lineHash->{'mapped	in gene'} >
+			0.05 )
+		{
+			#merge this cell
+		}
+		else {
+			root->print_perl_var_def(
+				{ 'target' => $main_cell, 'source' => $_ } )
+			  . "\nI assume I should not merge this cell:\n"
+			  . join( "\t", @{ $sample_table->{'header'} } ) . "\n"
+			  . join( "\t", @{ @{ $sample_table->{'data'} }[$line_id] } )
+			  . "\nto the master cell (merge evidence = $lineHash->{'merge evidence'}; stringdist=$lineHash->{'stringdist'}):\n"
+			  . join(
+				"\t",
+				@{
+					@{ $sample_table->{'data'} }[
+					  $sample_table->get_rowNumbers_4_columnName_and_Entry(
+						  'sample tag', $main_cell->{'final'} )
+					]
+				}
+			  ) . "\n";
+		}
+		$sample_table->set_value_for( 'sample tag', $_, 'merged to',
+			$main_cell->{'final'} );
+		$sample_table->set_value_for(
+			'sample tag', $_,
+			'merge evidence',
+			$lineHash->{'merge evidence'}
+		);
+		$sample_table->set_value_for( 'sample tag', $_, 'stringdist',
+			&stringdist( $main_cell->{'final'}, $_ ) );
+		$lineHash = $sample_table->get_line_asHash(
+			$sample_table->get_rowNumbers_4_columnName_and_Entry(
+				'sample tag', $_
+			)
+		);
 
-	map { $result->rename_column( $_, "merged $_" ); $result->rename_column( $_. " spliced", "merged $_ spliced" ) } @cells;
+	} @cells;
+
+	$self->{'PDL'}->slice( ":," . $self->{'samples_in_result'}->{$main_cell->{'final'}} )
+	  += $self->{'PDL'}->slice(
+		":," . join( ":", map { $self->{'samples_in_result'}->{$_->{'final'}} } @cells ) );
+
+	$self->{'PDL'}->slice(
+		":," . $self->{'samples_in_result'}->{ $main_cell->{'final'} . " spliced" } ) +=
+	  $self->{'PDL'}->slice(
+		":,"
+		  . join( ":",
+			map { $self->{'samples_in_result'}->{ $_->{'final'} . " spliced" } } @cells )
+	  );
+
+	map {
+		$result->rename_column( $_->{'final'},              "merged $_" );
+		$result->rename_column( $_ ->{'final'}. " spliced", "merged $_ spliced" )
+	} @cells;
 
 }
 
@@ -776,4 +970,10 @@ sub unique {
 	my $h;
 	map { $h->{$_}++ } @_;
 	return sort keys %$h;
+}
+
+sub unique_cell_hashes {
+	my $h;
+	map { $h->{$_->{'final'}} = $_ } @_;
+	return sort { $a->{'final'} cmp $b->{'final'} } values %$h;
 }

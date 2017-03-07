@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 11;
+use Test::More tests => 15;
 use stefans_libs::flexible_data_structures::data_table;
 
 use FindBin;
@@ -53,6 +53,13 @@ print "Execution time: $duration s\n";
 #when dropping samples with not a single match to the transcriptome
 #Finished with mapping: 2123 samples and 2 gene_id's detected
 #Execution time: 3 s
+
+#Finished with mapping: 445 samples and 2 gene_id's detected
+#Saving data to '/home/stefanl/git/Chromium_SingleCell_Perl/t/data/output/QuantifyBamFile_tiny/test.xls' and '/home/stefanl/git/Chromium_SingleCell_Perl/t/data/output/QuantifyBamFile_tiny/test.spliced.xls' took: 0 hours, 0 min and 0 seconds s
+#Total run took: 0 hours, 0 min and 3 seconds s
+#Done
+#Execution time: 3 s
+
 @values = ();
 foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',
 'test.original_merged.xls', 'test.merge_report.txt'
@@ -67,5 +74,25 @@ print RSC "library(StefansExpressionSet)\n"."data <- read.delim('$outpath/test.x
 . " t <- SingleCellsNGS( dat = data, Samples=samples, namecol='X.sample.tag')\n";
 
 close ( RSC);
+
+my $data = data_table->new({'filename' => "$outpath/test.xls" });
+ok ( $data->Columns == 426, "the right column count (". $data->Columns().")");
+ok ( $data->Rows == 2, "the right row count (2) " );
+
+
+my $samples = data_table->new({'filename' => "$outpath/test.samples.xls"} );
+
+ok ( $data->Columns -1 == $samples->Rows(), "the sample table has one row for each data column (".($data->Columns -1)." == ".$samples->Rows() .")" );
+
+my $OK = 1;
+for ( my $i = 0; $i < $data->Columns()-1; $i ++ ) {
+	@{@{$data->{'data'}}[0]}[$i] ||= 0;
+	@{@{$data->{'data'}}[1]}[$i] ||= 0;
+	unless ( @{@{$data->{'data'}}[0]}[$i] + @{@{$data->{'data'}}[1]}[$i] >= 10){
+		$OK = 0;
+		warn "Sample @{$data->{'header'}}[$i] has only " .(@{@{$data->{'data'}}[0]}[$i] + @{@{$data->{'data'}}[1]}[$i])." reads\n";
+	}
+}
+ok ( $OK, "all cells have more than 10 reads in the 2 genes\n");
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
