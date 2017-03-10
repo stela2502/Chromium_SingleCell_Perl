@@ -280,8 +280,8 @@ sub filter {
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
 	$N            = 0;
 	$Seq          = 0;
-	map { $N   += $_ } $bam_line[4] =~ m/(\d+)N/g;
-	map { $Seq += $_ } $bam_line[4] =~ m/(\d+)M/g;
+	map { $N   += $_ } $bam_line[5] =~ m/(\d+)N/g;
+	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
 
 	if ( $N > $Seq ) {
 		## most probably spliced! (?)
