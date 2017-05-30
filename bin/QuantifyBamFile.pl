@@ -48,6 +48,8 @@ use stefans_libs::flexible_data_structures::data_table;
 use stefans_libs::file_readers::gtf_file;
 use Digest::MD5 qw(md5_hex);
 
+use stefans_libs::database::Chromium_SingleCell::datavalues;
+
 use PDL;
 use PDL::NiceSlice;
 $PDL::BIGPDL = 1;
@@ -275,7 +277,7 @@ sub filter {
 	return
 	  if ( $self->{'UMIs'}->{$UMI} > 1 )
 	  ;    ## the sample specific UMIs will lead to a merge of the samples
-	##and therefore I suold not add more than one UMI per exon
+	##and therefore I should not add more than one UMI per exon
 
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
 	$N            = 0;
@@ -327,6 +329,8 @@ unless ( $outfile =~ m/xls$/ ) {
 }
 $tmp = $outfile;
 $tmp =~ s/.xls$//;
+
+
 
 if ($debug) {
 	$result->write_table( $tmp . ".original.xls" );
@@ -504,6 +508,12 @@ if ($debug) {
 	close($MERGE);
 }
 
+my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues -> new(  $tmp . ".original_merged.db" );
+
+$SQlite_db->{'data_storage_spliced'} = 1;
+$SQlite_db-> store_data_table ( $result, 'Gene_ID');
+
+
 if ($debug) {
 	$result->write_table( $tmp . ".original_merged.xls" );
 }
@@ -603,6 +613,7 @@ $start = $first_start;
 print "Done\n";
 
 close(LOG);
+
 
 sub get_matching_ids {
 	my ( $gtf, $chr, $start ) = @_;
@@ -704,6 +715,9 @@ sub stringdist {
 	my @B = split( "", $b );
 	my $ret = 0;
 	for ( my $i = 0 ; $i < @A ; $i++ ) {
+		if ( !defined $A[$i] or  ! defined $B[$i] ) {
+			Carp::confess ( "String problems at position '$i' a:'$a' b:'$b'\n");
+		}
 		$ret++ unless ( $A[$i] eq $B[$i] );
 	}
 	return $ret;
@@ -721,7 +735,9 @@ sub identify_merge_target {
 
 #warn   "                 I got the return value  '$return'  stringdist = ".&stringdist($cname,$return)."\n";
 	unless ( defined $return ) {
-		Carp::confess("Could not identify sample $cname!\n");
+		#$sample_table->write_table("problematic_samples_missing_$cname");
+		# this function is used as test too - hence I must not die here!
+		#Carp::confess("Could not identify sample $cname!\n");
 		return undef;
 	}
 	if ( $return =~ m/C_[AGTCN]*/
@@ -755,18 +771,23 @@ sub merge_cells {
 	## first check that these columns still exist!
 	my ( @tmp, @already_merged, $mtcol, $lineHash );
 
-	foreach (@cells) {    #the sample has not been merged before
+	foreach my $cell_name (@cells) {    #the sample has not been merged before
 		if (    defined $result->Header_Position($_)
-			and defined $sample_table->createIndex('sample tag')->{$_} )
+			and defined $sample_table->createIndex('sample tag')->{$cell_name} )
 		{
-			$tmp[@tmp] = { 'orig' => $_, 'final' => $_ };
+			$tmp[@tmp] = { 'orig' => $cell_name, 'final' => $cell_name };
 		}
-		elsif ( defined $sample_table->createIndex('sample tag')->{$_} )
+		elsif ( defined $sample_table->createIndex('sample tag')->{$cell_name} )
 		{                 ## one partner has been merged before
 			## now we need to try to identify the respective target and check that it is not the other sample
-			$mtcol = &identify_merge_target($_);
+			$mtcol = &identify_merge_target($cell_name);
+			unless ( defined $mtcol ) {
+				# the cell was simply not in the dataset - strange!
+				# no action needed?!
+				next;
+			}
 			if ( $mtcol =~ m/C_[AGTCN]*/ ) {
-				$tmp[@tmp] = { 'orig' => $_, 'final' => $mtcol };
+				$tmp[@tmp] = { 'orig' => $cell_name, 'final' => $mtcol };
 			}
 		}
 		else {
@@ -807,17 +828,17 @@ sub merge_cells {
 	}
 	$sample_table->set_value_for( 'sample tag', $main_cell, 'total UMI count',
 		&lsum(@sums) );
-	map {
+	foreach my $cell_hash (@cells){
 		$lineHash = $sample_table->get_line_asHash(
 			$line_id = $sample_table->get_rowNumbers_4_columnName_and_Entry(
-				'sample tag', $_->{'orig'}
+				'sample tag', $cell_hash->{'orig'}
 			)
 		);
 		$lineHash->{'merged to'}      = $main_cell->{'final'};
 		$lineHash->{'merge evidence'} = $self->{'cell_id_to_name_md5'}
-		  ->{ join( " ", sort $main_cell->{'orig'}, $_->{'orig'} ) };
+		  ->{ join( " ", sort $main_cell->{'orig'}, $cell_hash->{'orig'} ) };
 		$lineHash->{'stringdist'} =
-		  &stringdist( $main_cell->{'final'}, $_->{'final'} );
+		  &stringdist( $main_cell->{'final'}, $cell_hash->{'final'} );
 		$lineHash->{'mapped	in gene'} ||= 1;
 		if ( $lineHash->{'merge evidence'} / $lineHash->{'mapped	in gene'} >
 			0.05 )
@@ -826,7 +847,7 @@ sub merge_cells {
 		}
 		else {
 			root->print_perl_var_def(
-				{ 'target' => $main_cell, 'source' => $_ } )
+				{ 'target' => $main_cell, 'source' => $cell_hash } )
 			  . "\nI assume I should not merge this cell:\n"
 			  . join( "\t", @{ $sample_table->{'header'} } ) . "\n"
 			  . join( "\t", @{ @{ $sample_table->{'data'} }[$line_id] } )
@@ -841,23 +862,23 @@ sub merge_cells {
 				}
 			  ) . "\n";
 		}
-		$sample_table->set_value_for( 'sample tag', $_, 'merged to',
+		$sample_table->set_value_for( 'sample tag', $cell_hash, 'merged to',
 			$main_cell->{'final'} );
 		$sample_table->set_value_for(
-			'sample tag', $_,
+			'sample tag', $cell_hash,
 			'merge evidence',
 			$lineHash->{'merge evidence'}
 		);
-		$sample_table->set_value_for( 'sample tag', $_, 'stringdist',
-			&stringdist( $main_cell->{'final'}, $_ ) );
+		$sample_table->set_value_for( 'sample tag', $cell_hash, 'stringdist',
+			&stringdist( $main_cell->{'final'}, $cell_hash->{'final'} ) );
 		$lineHash = $sample_table->get_line_asHash(
 			$sample_table->get_rowNumbers_4_columnName_and_Entry(
-				'sample tag', $_
+				'sample tag', $cell_hash->{'final'}
 			)
 		);
 
-	} @cells;
-
+	}
+	
 	$self->{'PDL'}->slice( ":," . $self->{'samples_in_result'}->{$main_cell->{'final'}} )
 	  += $self->{'PDL'}->slice(
 		":," . join( ":", map { $self->{'samples_in_result'}->{$_->{'final'}} } @cells ) );
@@ -869,11 +890,11 @@ sub merge_cells {
 		  . join( ":",
 			map { $self->{'samples_in_result'}->{ $_->{'final'} . " spliced" } } @cells )
 	  );
+	foreach my $cell_hash (@cells){
 
-	map {
-		$result->rename_column( $_->{'final'},              "merged $_" );
-		$result->rename_column( $_ ->{'final'}. " spliced", "merged $_ spliced" )
-	} @cells;
+		$result->rename_column( $cell_hash->{'final'},              "merged $cell_hash->{'final'}" );
+		$result->rename_column( $cell_hash ->{'final'}. " spliced", "merged $cell_hash->{'final'} spliced" )
+	}
 
 }
 
