@@ -18,8 +18,8 @@ if ( -d $outpath ) {
 }else {
 	system("mkdir -p $outpath" );
 }
-
-$infile  = $plugin_path."/data/HSC_data.xls.gz";
+$infile  =  $plugin_path."/HSC_data_ten_percent.xls.gz";
+#$infile  = $plugin_path."/data/HSC_data.xls.gz";
 $outfile = "$outpath/test.db";
 
 

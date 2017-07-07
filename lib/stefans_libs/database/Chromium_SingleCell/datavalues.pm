@@ -136,7 +136,7 @@ sub  init_tableStructure {
 			'description'  => '',
 			'needed'       => ''
 		}
-	 );
+	 ) if ( $self->{'data_storage_spliced'} );
 	 
      $self->{'table_definition'} = $hash;
      $self->{'UNIQUE_KEY'} = [ 'sample_id','gene_id' ];
@@ -185,7 +185,11 @@ sub store_data_table {
 	($samples) = $data_table->Header_Position($gene_colname);
 	
 	$data = data_table->new();
-	$data-> Add_2_Header(['id', 'sample_id', 'gene_id', 'value', 'spliced']);
+	if ( $self->{'data_storage_spliced'} ){
+		$data-> Add_2_Header(['id', 'sample_id', 'gene_id', 'value', 'spliced']);
+	}else {
+		$data-> Add_2_Header(['id', 'sample_id', 'gene_id', 'value' ]);
+	}
 	$i = 1;
 	my $sample_ID = 0;
 	if ( $samples == 0 ){
@@ -206,7 +210,7 @@ sub store_data_table {
 				for (my $sample_id = $sample_ID; $sample_id< $data_table->Columns();$sample_id ++ ){
 					next if ( $sample_id == $samples);
 					$v = @{@{$data_table->{'data'}}[$gene_id]}[$sample_id];
-					push(@{$data->{'data'}}, [$i ++, $sample_id+1, $gene_id+1, $v, 0 ]) 
+					push(@{$data->{'data'}}, [$i ++, $sample_id+1, $gene_id+1, $v ]) 
 						if ( defined $v and $v != 0 );
 				}
 			}
