@@ -49,6 +49,7 @@ my $cmd = "perl -I $plugin_path/../lib "
   . " -debug";
 
 my $start = time;
+print $cmd."\n";
 system($cmd );
 my $duration = time - $start;
 print "Execution time: $duration s\n";
