@@ -25,9 +25,9 @@
 =head1  SYNOPSIS
 
     XLS_to_SQLite.pl
-       -infile       :<please add some info!>
-       -outfile       :<please add some info!>
-
+       -infile       :the input tab separated table file
+       -outfile      :the sqlite database name
+	   -gene_first   :the gene is in the first column not in the last (default)
 
        -help           :print this help
        -debug          :verbose output
@@ -55,11 +55,12 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 
-my ( $help, $debug, $database, $infile, $outfile);
+my ( $help, $debug, $database, $infile, $outfile, $gene_first);
 
 Getopt::Long::GetOptions(
 	 "-infile=s"    => \$infile,
 	 "-outfile=s"    => \$outfile,
+	 "-gene_first" => \$gene_first,
 
 	 "-help"             => \$help,
 	 "-debug"            => \$debug
@@ -100,7 +101,7 @@ my ( $task_description);
 $task_description .= 'perl '.$plugin_path .'/XLS_to_SQLite.pl';
 $task_description .= " -infile '$infile'" if (defined $infile);
 $task_description .= " -outfile '$outfile'" if (defined $outfile);
-
+$task_description .= " -gene_first" if ( $gene_first );
 
 
 use stefans_libs::Version;
@@ -146,7 +147,11 @@ while ( <IN> ) {
 		$_ =~ s/^#//;
 		@tmp = 	split("\t", $_);
 		print "Samples like: ".join("  ", @tmp[1..10])."\n";
-		pop(@tmp);
+		if ( $gene_first ){
+			shift(@tmp)
+		}else {
+			pop(@tmp)
+		}
 		my $i = 1;
 		map { 
 			push(@{$samples->{'data'}}, [$i++, $_ ] ) 
@@ -157,13 +162,18 @@ while ( <IN> ) {
 		next;
 	}
 	@tmp = 	split("\t", $_);
-	$gname = pop(@tmp);
+	if ( $gene_first ){
+		$gname = shift(@tmp)
+	}else {
+		$gname = pop(@tmp)
+	}
 	push(@{$genes->{'data'}}, [$gene_id, $gname]);
 		
 	for ( my $i = 0; $i < @tmp; $i++ ) {
 		if ( $tmp[$i] =~ m/\d/ ) {
 			$entries ++;
-			push( @{$data->{'data'}}, [$data_id ++, $i+1, $gene_id, $tmp[$i]]);
+			my $a = [$data_id ++, $i+1, $gene_id, $tmp[$i]];
+			push( @{$data->{'data'}}, $a ) if ( $tmp[$i] != 0);
 			#$obj -> AddDataset( { 'gene_id' => $gene_id, 'sample_id' => $samples[$i], 'value' => $tmp[$i]} );
 		}
 		#$obj -> commit();
