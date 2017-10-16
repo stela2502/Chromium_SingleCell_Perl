@@ -233,7 +233,10 @@ sub filter {
 #NB501227:57:HGJM5BGX2:1:23206:13379:6742:S_GATCTCAG_C_TATGCCCTCCATTCTA_CAGGTGAAGC
 	@matching_IDs = split( ":", $bam_line[0] );
 	@matching_IDs = split( "_", pop(@matching_IDs) );
-
+	
+	if ( (! defined $matching_IDs[2]) or (! defined $matching_IDs[3])  ) {
+		Carp::confess ( "Sorry I lack the UMI information - have you used SplitToCells.pl?");
+	}
 	$sample_name = join( "_", @matching_IDs[ 2, 3 ] );
 
 #$sample_name = $self->{'cell_id_to_name'}->{$sample_name} if ( defined $self->{'cell_id_to_name'}->{$sample_name});
