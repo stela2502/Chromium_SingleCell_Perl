@@ -160,13 +160,16 @@ open( LOG, ">$outpath/" . $$ . "_10xpipeline.pl.log" ) or die $!;
 print LOG $task_description . "\n";
 close(LOG);
 
+my $fm = root->filemap( "$outpath/" . $$ . "_10xpipeline.pl.log");
+$outpath = $fm->{'path'};
+
 ## default slurm options
 $options->{'A'} ||= 'lsens2017-3-2';
 $options->{'n'} ||= 1;
 $options->{'N'} ||= 1;
 $options->{'t'} ||= '02:00:00';
 
-my $SLURM = stefans_libs::SLURM->new($options);
+my $SLURM = stefans_libs::SLURM->new($options, 0);
 $SLURM->{'debug'} = 1 if ($debug);
 
 ## Do whatever you want!
@@ -174,27 +177,34 @@ $SLURM->{'debug'} = 1 if ($debug);
 ## first we need to run the SplitToCells.pl script. this should definitely be run on a blade.
 my ( $cmd, $sumFastq ) = &SplitToCell();
 my $SLURM_id = 0;
-if ( $debug ){
-	print "$cmd";
-}else {
+
+print "$cmd"."\n$sumFastq\n";
+
+if ( ! -f $sumFastq  and ! $debug ) {
+
 	$SLURM_id = $SLURM->run( $cmd, $sumFastq );
+}else {
+	warn "OUtfile present - SplitToCell not re-run\n";
 }
 
 &wait_for_PID($SLURM_id);
 ## now map the sample
 
+#hisat2_run_aurora.pl 
+#print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
+
 my $hisat2 =
-"hisat2_run_aurora.pl -files $sumFastq -outpath $outpath/HISAT2_mapped/ -options n 5 p $options-{'p'} A $options->{'A'} ";
+"hisat2_run_aurora.pl -files $sumFastq -outpath $outpath/HISAT2_mapped/ -options n 5 partitition $options->{'p'} A ".$options->{'A'};
 $hisat2 .=
 " -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
 $hisat2 .= " -fast_tmp '$fast_tmp'";
 
 if ($debug) {
-	print $cmd;
+	print $hisat2."\n";
 }
 else {
-	print $cmd;
-	open( RUN, $cmd . " | " );
+	print $hisat2."\n";
+	open( RUN, $hisat2 . " | " );
 	$SLURM_id = 0;
 	foreach (<RUN>) {
 		if ( $_ = /Submitted batch job (\d+)/ ) {
@@ -216,11 +226,11 @@ else {
 
 $cmd = QuantifyBamFile();
 if ($debug) {
-	print $cmd;
+	print $cmd."\n";
 }
 else {
-	print $cmd;
-	system($cmd );
+	print $cmd."\n";
+	system($cmd ) unless ( -f "$outpath/$sname.original_merged.db" );
 }
 
 sub QuantifyBamFile {
@@ -228,7 +238,7 @@ sub QuantifyBamFile {
 	  "$outpath/HISAT2_mapped/$sname.annotated.fastq_hisat.sorted.bam";
 	my $cmd = 'QuantifyBamFile.pl ';
 	$cmd .= " -infile $bam_file";
-	$cmd .= " -gtf_file gtf";
+	$cmd .= " -gtf_file $gtf";
 	$cmd .= " -outfile $outpath/quant_$sname";
 	return $cmd;
 }
@@ -250,21 +260,27 @@ sub SplitToCell {
 #gives file 'Joined_Tina_fastq/Tina_CLP_singleCells.annotated.fastq.gz'
 	my $i;
 	map {
-		if ( $_ =~ m/\d\d\d_([IR][12])_\d\d\d / ) {
+		if ( $_ =~ m/\d\d\d_([IR][12])_\d\d\d/ ) {
 			$cmd .= " -$1 $_";
-			$i->{$1}++;
+			$i->{$1}||=0;
+			$i->{$1} ++;
+		}else {
+			warn "$_ does not match \\d\\d\\d_[IR][12]_\\d\\d\\d?\n";
 		}
 	} @fastq;
 	unless ( join( ' ', sort keys %$i ) eq "I1 R1 R2"
 		and $i->{'I1'} + $i->{'R1'} + $i->{'R2'} == 3 )
 	{
 		Carp::confess(
-"Sorry, but SplitToCell.pl resures exactly one I1, one R1 and one R2 fastq file\n"
+"Sorry, but SplitToCell.pl requires exactly one I1, one R1 and one R2 fastq file\n'".
+ join( ' ', sort keys %$i ). "' should be 'I1 R1 R2' (". ($i->{'I1'} + $i->{'R1'} + $i->{'R2'}). ") should be 3\n"
 		);
 	}
 	$cmd .= " -outpath $fast_tmp";
 	$cmd .= " -options oname $sname";
 	$cmd .= "\ncp $fast_tmp/$sname.annotated.fastq.gz $outpath\n";
+	$cmd .= "cp $fast_tmp/*.log $outpath\n";
+	
 
 	return $cmd, join( "/", $outpath, $sname . ".annotated.fastq.gz" );
 }

@@ -33,7 +33,11 @@ use warnings;
 
 sub new {
 
-    my ( $class, $file, $debug ) = @_;
+    my ( $class, $hash, $debug ) = @_;
+
+	unless ( ref($hash) eq "HASH" ){
+		Carp::confess ( "Please update your script - I am expecting an hash here!");
+	}
     
 #    $file ||= "Chromium_SingleCell_Perl.db";
 #    my $driver   = "SQLite";
@@ -47,12 +51,12 @@ sub new {
     my ($self);
 
     $self = {
-        debug => $debug,
+        debug => $hash->{debug},
 #        dbh   => $dbh,
-		'data_storage_spliced' => 0,
+		'data_storage_spliced' =>  $hash->{'data_storage_spliced'},
         connection => {
         	'driver' => "SQLite",
-        	'filename' => $file,
+        	'filename' => $hash->{'file'},
         },
     };
 
@@ -173,7 +177,12 @@ sub store_data_table {
 	
 	$samples = data_table->new();
 	my $i = 1;
-	$samples ->Add_db_result( ['id', 'sname'], [map { [ $i++, $_] } @{$data_table->{'header'}} ] );
+	if ( $self->{'data_storage_spliced'}){
+		$samples ->Add_db_result( ['id', 'sname'], [map { [ $i++, $_] } grep { !/spliced/ } @{$data_table->{'header'}} ] );
+	}else {
+		$samples ->Add_db_result( ['id', 'sname'], [map { [ $i++, $_] }  @{$data_table->{'header'}} ] );
+	}
+	
 	$batch -> batch_import ( $self->{'samples'}, $samples );
 	undef($samples);
 	
@@ -219,6 +228,7 @@ sub store_data_table {
 	undef($data);
 	return $self;
 }
+
 
 
 sub expected_dbh_type {

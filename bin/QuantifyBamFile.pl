@@ -23,6 +23,7 @@
        -infile   :one bam file containing thousands of different cells (Illumnina 10x Chromium)
        -gtf_file :the gtf file for quantification
        -outfile  :the tab separated outfile (will be overwritten)
+       -forks    :how many processors to use? default =4
        -options  : format: key_1 value_1 key_2 value_2 ... key_n value_n
 
            quantify_on: which feature to select for quantification from the gtf file (default 'exon')
@@ -52,6 +53,9 @@ use stefans_libs::database::Chromium_SingleCell::datavalues;
 
 use PDL;
 use PDL::NiceSlice;
+
+use Parallel::ForkManager;
+
 $PDL::BIGPDL = 1;
 
 use strict;
@@ -62,7 +66,7 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
-my ( $help, $debug, $database, $infile, $gtf_file, $outfile, $options,
+my ( $help, $debug, $database, $infile, $gtf_file, $forks, $outfile, $options,
 	@options );
 
 Getopt::Long::GetOptions(
@@ -70,6 +74,7 @@ Getopt::Long::GetOptions(
 	"-gtf_file=s"   => \$gtf_file,
 	"-outfile=s"    => \$outfile,
 	"-options=s{,}" => \@options,
+	"-forks=s" => \$forks,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -89,6 +94,9 @@ unless ( defined $outfile ) {
 }
 unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
+}
+unless ( defined $forks ) {
+	$forks = 4;
 }
 
 if ($help) {
@@ -309,7 +317,11 @@ sub filter {
 
 }
 
-$bam_file->filter_file( $infile, \&filter );
+my $pm = Parallel::ForkManager->new($forks);
+
+
+$bam_file->filter_file( $infile, \&filter, $pm );
+
 
 &measure_time_and_state("Mapping the UMIs to the transcriptome");
 
@@ -511,10 +523,10 @@ if ($debug) {
 	close($MERGE);
 }
 
-my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues -> new(  $tmp . ".original_merged.db" );
+my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues -> new( {'file' => $tmp . ".original_merged.db", 'data_storage_spliced' => 1 } );
 
-$SQlite_db->{'data_storage_spliced'} = 1;
 $SQlite_db-> store_data_table ( $result, 'Gene_ID');
+
 
 
 if ($debug) {
@@ -800,11 +812,7 @@ sub merge_cells {
 	}
 	@tmp = &unique_cell_hashes(@tmp);
 	if ( @tmp < 2 ) {
-		warn "I could not merge the cells "
-		  . join( ", ", @cells )
-		  . " as I only identified "
-		  . scalar(@tmp)
-		  . " rows I could merge\n";
+		#warn "I could not merge the cells ". join( ", ", @cells ). " as I only identified ". scalar(@tmp). " rows I could merge\n";
 		return;
 	}
 	@cells = @tmp;
