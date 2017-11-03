@@ -134,7 +134,7 @@ for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 ##############################
 
 mkdir( $outpath ) unless ( -d $outpath );
-open ( LOG , ">$outpath/".$$."_SplitToCells.pl.log") or die $!;
+open ( LOG , ">$outpath/$outpath/$options->{'oname'}.annotated.fastq.gz".$$."_SplitToCells.pl.log") or die $!;
 print LOG $task_description."\n";
 close ( LOG );
 
@@ -199,11 +199,11 @@ $worker->filter_multiple_files(
 close ( $OUT );
 
 
-open ( OUT ,">$outpath/$options->{'oname'}.per_cell_read_count.xls" ) or die "I could not open the file '$outpath/per_cell_read_count.xls'\n$!\n";
+open ( OUT ,">$outpath/$options->{'oname'}.per_cell_read_count.xls" ) or die "I could not open the file '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n$!\n";
 print OUT "Cell_ID\tcount\n";
 foreach my $key ( sort  keys %$counter ) {
 	print OUT "$key\t$counter->{$key}\n";
 }
 close ( OUT );
-print "A detailed per cell read count has been written to '$outpath/per_cell_read_count.xls'\n";
+print "A detailed per cell read count has been written to '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n";
 

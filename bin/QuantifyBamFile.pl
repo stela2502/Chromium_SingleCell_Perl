@@ -144,6 +144,8 @@ my $self = {
 	'UMI'      => {},
 	'mergable' => [],
 	'UMIs'     => {},
+	'duplicates' => 0,
+	'total_reads' => 0,
 };    # the script should store global variables here
 
 ## turn on autoflush for the process bar:
@@ -285,9 +287,10 @@ sub filter {
 	$self->{'UMI'}->{$sample_name} ||= {};
 	$self->{'UMI'}->{$sample_name}->{$UMI}++;
 	$self->{'UMIs'}->{$UMI}++;
-	return
-	  if ( $self->{'UMIs'}->{$UMI} > 1 )
-	  ;    ## the sample specific UMIs will lead to a merge of the samples
+	if (  $self->{'UMIs'}->{$UMI} > 1 ){
+		$self->{'duplicates'} ++;
+		return;
+	} ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
 
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
@@ -320,10 +323,13 @@ sub filter {
 my $pm = Parallel::ForkManager->new($forks);
 
 
+$runs= 0;
 $bam_file->filter_file( $infile, \&filter, $pm );
-
+$self->{total_reads} = $runs;
 
 &measure_time_and_state("Mapping the UMIs to the transcriptome");
+
+print "In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp (". sprintf( "%.3f", ($self->{'duplicates'} / $self->{'total_reads'}) * 100 )."%)\n";
 
 ## now I can drop the quantifier and the gff
 
@@ -625,6 +631,9 @@ $start = $first_start;
 
 &measure_time_and_state("Total run");
 
+$tmp = "In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp (". sprintf( "%.3f", ($self->{'duplicates'} / $self->{'total_reads'}) * 100 )."%)\n";
+print LOG $tmp;
+print $tmp;
 print "Done\n";
 
 close(LOG);
@@ -642,7 +651,7 @@ sub get_matching_ids {
 	}
 
 #return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
-	if ( $self->{'end'} <= $start ) {
+	if ( $self->{'end'} <= $start ) {# match to a new feature
 		&reinit_UMI();
 		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
 
