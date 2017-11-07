@@ -174,7 +174,6 @@ $gtf_obj->read_file($gtf_file);
 my $quantifer =
   $gtf_obj->select_where( 'feature',
 	sub { $_[0] eq $options->{'quantify_on'} } );
-
 my (
 	@matching_IDs, $N,   $Seq, $sample_name, $sample_table,
 	$sample_row,   $sum, $max, $min
@@ -279,7 +278,7 @@ sub filter {
 
 	## start with the real matching
 	@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] );
-
+	#warn "All OK - add it somewhere? @matching_IDs \n";
 	return if ( @matching_IDs == 0 );    ## no match to any gene / exon
 
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
@@ -298,7 +297,6 @@ sub filter {
 	$Seq          = 0;
 	map { $N   += $_ } $bam_line[5] =~ m/(\d+)N/g;
 	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
-
 	if ( $N > $Seq ) {
 		## most probably spliced! (?)
 		## So the real match can only be on an element on both ends of the splice
@@ -324,13 +322,14 @@ my $pm = Parallel::ForkManager->new($forks);
 
 
 $runs= 0;
-$bam_file->filter_file( $infile, \&filter, $pm );
+$bam_file->filter_file( $infile, \&filter );
 $self->{total_reads} = $runs;
 
 &measure_time_and_state("Mapping the UMIs to the transcriptome");
 
 print "In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp (". sprintf( "%.3f", ($self->{'duplicates'} / $self->{'total_reads'}) * 100 )."%)\n";
 
+#print "drop me 1". $result->AsString();
 ## now I can drop the quantifier and the gff
 
 $quantifer = undef;
@@ -374,6 +373,8 @@ if ($debug) {
 print "Syncing sample table and data table\n";
 my $i = 0;
 $self->{'samples_in_result'} = { map { $_ => $i++ } @{ $result->{'header'} } };
+
+#print "\$exp = ".root->print_perl_var_def( $self->{'samples_in_result'} ).";\n";
 
 $sample_table->drop_rows( 'sample tag',
 	sub { !defined $self->{'samples_in_result'}->{ $_[0] } } );
@@ -655,21 +656,22 @@ sub get_matching_ids {
 		&reinit_UMI();
 		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
 
-		#warn(
-		#	"Some fuckup happened - I did not get any result ($chr, $start)\n'"
-		#	  . join( "','", @IDS )
-		#	  . "\n" )
+#		warn
+#			"Some fuckup happened - I did not get any result ($chr, $start)\n'"
+#			  . join( "','", @IDS )
+#			  . "\n" ;
 		return
 		  if ( @IDS == 0 or !defined( $IDS[0] ) )
 		  ;    ## pdl has no more matching entries
+		#warn "I got an match!\n";
 		$nextID = pop(@IDS);
-		unless ( defined $nextID )
+		if ( !defined $nextID )
 		{      ## the end of the chromosome annotation data has been reached
 			    #$self->{'skip_to_next_chr'} = 1;
 			$self->{'next_start'} =
 			  ( $gtf->get_chr_subID_4_start($start) + 1 ) *
 			  $gtf->{'slice_length'};
-			return;
+			return @IDS ;
 		}
 		$self->{'next_start'} =
 		  @{ @{ $gtf->{'data'} }[$nextID] }[ $gtf->Header_Position('start') ];
