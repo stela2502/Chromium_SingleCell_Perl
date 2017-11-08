@@ -66,15 +66,17 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
-my ( $help, $debug, $database, $infile, $gtf_file, $forks, $outfile, $options,
-	@options );
+my (
+	$help,  $debug,   $database, $infile, $gtf_file,
+	$forks, $outfile, $options,  @options
+);
 
 Getopt::Long::GetOptions(
 	"-infile=s"     => \$infile,
 	"-gtf_file=s"   => \$gtf_file,
 	"-outfile=s"    => \$outfile,
 	"-options=s{,}" => \@options,
-	"-forks=s" => \$forks,
+	"-forks=s"      => \$forks,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -139,12 +141,12 @@ $options->{'min_UMIs'}    ||= 100;
 ###
 
 my $self = {
-	'chr'      => '',
-	'end'      => 0,
-	'UMI'      => {},
-	'mergable' => [],
-	'UMIs'     => {},
-	'duplicates' => 0,
+	'chr'         => '',
+	'end'         => 0,
+	'UMI'         => {},
+	'mergable'    => [],
+	'UMIs'        => {},
+	'duplicates'  => 0,
 	'total_reads' => 0,
 };    # the script should store global variables here
 
@@ -242,12 +244,13 @@ sub filter {
 #NB501227:57:HGJM5BGX2:1:23206:13379:6742:S_GATCTCAG_C_TATGCCCTCCATTCTA_CAGGTGAAGC
 	@matching_IDs = split( ":", $bam_line[0] );
 	@matching_IDs = split( "_", pop(@matching_IDs) );
-	
-	if ( (! defined $matching_IDs[2]) or (! defined $matching_IDs[3])  ) {
-		Carp::confess ( "Sorry I lack the UMI information - have you used SplitToCells.pl?");
+
+	if ( ( !defined $matching_IDs[2] ) or ( !defined $matching_IDs[3] ) ) {
+		Carp::confess(
+			"Sorry I lack the UMI information - have you used SplitToCells.pl?"
+		);
 	}
 	$sample_name = join( "_", @matching_IDs[ 2, 3 ] );
-	
 
 #$sample_name = $self->{'cell_id_to_name'}->{$sample_name} if ( defined $self->{'cell_id_to_name'}->{$sample_name});
 	$UMI = $matching_IDs[4];
@@ -276,12 +279,14 @@ sub filter {
 	else {
 		@{ @{ $sample_table->{'data'} }[$sample_row] }[1]++;
 	}
-	#warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n";
+
+ #warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n";
 	## start with the real matching
 	@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] );
+
 	#warn "\tAll OK - add it somewhere? ".join(", ",@matching_IDs )."\n";
-	if ( scalar(@matching_IDs) == 0 ){    ## no match to any gene / exon
-		#warn "\tNo matching featuires!\n";
+	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
+		                                   #warn "\tNo matching featuires!\n";
 		return;
 	}
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
@@ -289,11 +294,12 @@ sub filter {
 	$self->{'UMI'}->{$sample_name} ||= {};
 	$self->{'UMI'}->{$sample_name}->{$UMI}++;
 	$self->{'UMIs'}->{$UMI}++;
-	if (  $self->{'UMIs'}->{$UMI} > 1 ){
-		$self->{'duplicates'} ++;
+	if ( $self->{'UMIs'}->{$UMI} > 1 ) {
+		$self->{'duplicates'}++;
+
 		#warn "\tNo a UMI duplicate ($UMI)\n" if ( $debug);
 		return;
-	} ## the sample specific UMIs will lead to a merge of the samples
+	}    ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
 
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
@@ -324,19 +330,21 @@ sub filter {
 
 my $pm = Parallel::ForkManager->new($forks);
 
+$runs = 0;
 
-$runs= 0;
-
-$self->{'end'} = 0;
+$self->{'end'}        = 0;
 $self->{'next_start'} = 0;
-$self->{'last_IDS'} = [];
+$self->{'last_IDS'}   = [];
 
 $bam_file->filter_file( $infile, \&filter );
 $self->{total_reads} = $runs;
 
 &measure_time_and_state("Mapping the UMIs to the transcriptome");
 
-print "In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp (". sprintf( "%.3f", ($self->{'duplicates'} / $self->{'total_reads'}) * 100 )."%)\n";
+print
+"In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp ("
+  . sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
+  . "%)\n";
 
 #print "drop me 1". $result->AsString();
 ## now I can drop the quantifier and the gff
@@ -358,8 +366,6 @@ unless ( $outfile =~ m/xls$/ ) {
 }
 $tmp = $outfile;
 $tmp =~ s/.xls$//;
-
-
 
 if ($debug) {
 	$result->write_table( $tmp . ".original.xls" );
@@ -428,9 +434,7 @@ foreach ( keys %{ $self->{'samples_in_result'} } ) {
 	$self->{'samples_in_result'}->{$_}--;
 }
 $| = 1;
-print "Calculating colum sums for "
-  . ( $sample_table->Rows()  )
-  . " samples:\n";
+print "Calculating colum sums for " . ( $sample_table->Rows() ) . " samples:\n";
 my $data_col_name;
 
 ## considder to use use PDL::Sparse; here andset the none 0 values 'by hand'
@@ -448,7 +452,6 @@ $sums = unpdl($sums);
 
 #print "this is the summary over the pdl: ". join(", ",@$sums)."\n";
 
-
 $sample_table->add_column( 'total UMI count',
 	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
 $sample_table->add_column( 'total UMI count no merge',
@@ -465,7 +468,7 @@ $sample_table->add_column( 'spliced UMI count no merge',
 
 ## now I need to merge the samples!
 
-print "\nStarting to merge cells that share a UMI in an exon\n" if ( $debug);
+print "\nStarting to merge cells that share a UMI in an exon\n" if ($debug);
 
 $sample_table->Add_2_Header( [ 'merged to', 'merge evidence', 'stringdist' ] );
 
@@ -475,7 +478,6 @@ foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
 delete( $self->{'mergable'} );
 
 #print "The finished sample table after merge:\n".$sample_table->AsString()."\n" if ( $debug );
-
 
 &measure_time_and_state(
 	"\nMering cells where the same UMI tagged the same transcript");
@@ -521,12 +523,13 @@ if ($debug) {
 
 $subsetted_data->{'data'} =
   unpdl( $self->{'PDL'}->xchg( 0, 1 )->dice_axis( 0, \@wanted_positions ) );
-  
+
 $subsetted_data->add_column( 'Gene_ID', @$Gene_IDs );
 
-print "The subsetted pdl data:" . $subsetted_data->AsString()."\n" if ($debug);
-#$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
+print "The subsetted pdl data:" . $subsetted_data->AsString() . "\n"
+  if ($debug);
 
+#$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
 
 $result        = undef;
 $result        = $subsetted_data;
@@ -537,8 +540,10 @@ $sample_table->write_table( $tmp . ".samples_after_sum_add.xls" );
 
 $sample_table->drop_rows( 'merged to', sub { defined $_[0] } );
 
-print "The sample table after a strange drop_rows:" . $sample_table->AsString()."\n" if ($debug);
-print "And the final result table:\n".$result->AsString()."\n" if ($debug);
+print "The sample table after a strange drop_rows:\n"
+  . $sample_table->AsString() . "\n"
+  if ($debug);
+print "And the final result table:\n" . $result->AsString() . "\n" if ($debug);
 
 $| = 0;
 
@@ -553,11 +558,10 @@ if ($debug) {
 	close($MERGE);
 }
 
-my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues -> new( {'file' => $tmp . ".original_merged.db", 'data_storage_spliced' => 1 } );
+my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues->new(
+	{ 'file' => $tmp . ".original_merged.db", 'data_storage_spliced' => 1 } );
 
-$SQlite_db-> store_data_table ( $result, 'Gene_ID');
-
-
+$SQlite_db->store_data_table( $result, 'Gene_ID' );
 
 if ($debug) {
 	$result->write_table( $tmp . ".original_merged.xls" );
@@ -655,17 +659,19 @@ $start = $first_start;
 
 &measure_time_and_state("Total run");
 
-$tmp = "In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp (". sprintf( "%.3f", ($self->{'duplicates'} / $self->{'total_reads'}) * 100 )."%)\n";
+$tmp =
+"In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp ("
+  . sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
+  . "%)\n";
 print LOG $tmp;
 print $tmp;
 print "Done\n";
 
 close(LOG);
 
-
 sub get_matching_ids {
 	my ( $gtf, $chr, $start ) = @_;
-	my ( @IDS, $nextID );
+	my ( @IDS, $nextID, @starts, @ends );
 	unless ( $self->{'chr'} eq $chr ) {
 		$self->{'chr'} = $chr;
 		$self->{'end'} = 0;
@@ -675,36 +681,40 @@ sub get_matching_ids {
 	}
 
 #return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
-	if ( $self->{'end'} <= $start ) {# match to a new feature
+	if ( $self->{'end'} <= $start and $start < $self->{'next_start'} ){
+		#warn "get_matching_ids intergenic - return\n";
+		return();
+	}
+	if ( $self->{'end'} <= $start ) {    # match to a new feature
 		#warn "get_matching_ids end < start ($self->{'end'} < $start)\n";
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
-		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
+		@IDS    = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
+		@starts = &get_chr_start_4_ids( $gtf,@IDS);
+		@ends   = &get_chr_end_4_ids( $gtf,@IDS);
+		my ( $match, $next,@OK, $lastOK );
+		$lastOK = 0;
+		$self->{'end'} = 0;
+		map {
 
-#		warn
-#			"Some fuckup happened - I did not get any result ($chr, $start)\n'"
-#			  . join( "','", @IDS )
-#			  . "\n" ;
-		return
-		  if ( @IDS == 0 or !defined( $IDS[0] ) )
-		  ;    ## pdl has no more matching entries
-		#warn "I got an match!\n";
-		$nextID = pop(@IDS);
-		if ( !defined $nextID )
-		{      ## the end of the chromosome annotation data has been reached
-			    #$self->{'skip_to_next_chr'} = 1;
-			$self->{'next_start'} =
-			  ( $gtf->get_chr_subID_4_start($start) + 1 ) *
-			  $gtf->{'slice_length'};
-			return @IDS ;
-		}
-		$self->{'next_start'} =
-		  @{ @{ $gtf->{'data'} }[$nextID] }[ $gtf->Header_Position('start') ];
-		$self->{'end'} = &lmin( &get_chr_end_4_ids( $gtf, @IDS ) );
-		$self->{'last_IDS'} = \@IDS;
+			if ( $starts[$_] < $start and $ends[$_] > $start ) {
+				## matching
+				push( @OK, $IDS[$_] );
+				$self->{'end'} ||= $ends[$_];
+				$lastOK = 1;
+			}elsif ( $lastOK == 1 and $starts[$_] > $start) {
+				$self->{'next_start'} = $starts[$_];
+				$lastOK = 0;
+			}
+		} 0 .. ( scalar(@IDS) - 1 );
+
+		#warn "I have identified the matching IDS as ".join(", ", @OK). " abnd the next start as $self->{'next_start'}\n";
+		
+		@IDS = @OK;
 	}
-	elsif ( $start < $self->{'end'} ){
-		#warn "\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n";
+	elsif ( $start < $self->{'end'} ) {
+		#warn
+#"\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n";
 		@IDS = @{ $self->{'last_IDS'} };
 	}
 	elsif ( $start < $self->{'next_start'} ) {
@@ -771,8 +781,8 @@ sub stringdist {
 	my @B = split( "", $b );
 	my $ret = 0;
 	for ( my $i = 0 ; $i < @A ; $i++ ) {
-		if ( !defined $A[$i] or  ! defined $B[$i] ) {
-			Carp::confess ( "String problems at position '$i' a:'$a' b:'$b'\n");
+		if ( !defined $A[$i] or !defined $B[$i] ) {
+			Carp::confess("String problems at position '$i' a:'$a' b:'$b'\n");
 		}
 		$ret++ unless ( $A[$i] eq $B[$i] );
 	}
@@ -791,6 +801,7 @@ sub identify_merge_target {
 
 #warn   "                 I got the return value  '$return'  stringdist = ".&stringdist($cname,$return)."\n";
 	unless ( defined $return ) {
+
 		#$sample_table->write_table("problematic_samples_missing_$cname");
 		# this function is used as test too - hence I must not die here!
 		#Carp::confess("Could not identify sample $cname!\n");
@@ -834,10 +845,11 @@ sub merge_cells {
 			$tmp[@tmp] = { 'orig' => $cell_name, 'final' => $cell_name };
 		}
 		elsif ( defined $sample_table->createIndex('sample tag')->{$cell_name} )
-		{                 ## one partner has been merged before
+		{                               ## one partner has been merged before
 			## now we need to try to identify the respective target and check that it is not the other sample
 			$mtcol = &identify_merge_target($cell_name);
 			unless ( defined $mtcol ) {
+
 				# the cell was simply not in the dataset - strange!
 				# no action needed?!
 				next;
@@ -853,21 +865,23 @@ sub merge_cells {
 	}
 	@tmp = &unique_cell_hashes(@tmp);
 	if ( @tmp < 2 ) {
-		#warn "I could not merge the cells ". join( ", ", @cells ). " as I only identified ". scalar(@tmp). " rows I could merge\n";
+
+#warn "I could not merge the cells ". join( ", ", @cells ). " as I only identified ". scalar(@tmp). " rows I could merge\n";
 		return;
 	}
 	@cells = @tmp;
 
-	#Carp::confess ( "is this a real sable cell has array?". root->print_perl_var_def( @cells)."\n");
+#Carp::confess ( "is this a real sable cell has array?". root->print_perl_var_def( @cells)."\n");
 
 	my @sums = map {
 		$sample_table->get_value_for(
 			'sample tag',
 			$_->{'final'},
 			'total UMI count'
-		  );
+		);
 	} @cells;
-	             #warn "the sums: '".join("', '", @sums ) ."'\n";
+
+	#warn "the sums: '".join("', '", @sums ) ."'\n";
 	my $max = &lmax(@sums);
 	my ( $main_cell, $position, @slave_cols, $line_id );
 	for ( my $i = 0 ; $i < @sums ; $i++ ) {
@@ -880,7 +894,7 @@ sub merge_cells {
 	}
 	$sample_table->set_value_for( 'sample tag', $main_cell, 'total UMI count',
 		&lsum(@sums) );
-	foreach my $cell_hash (@cells){
+	foreach my $cell_hash (@cells) {
 		$lineHash = $sample_table->get_line_asHash(
 			$line_id = $sample_table->get_rowNumbers_4_columnName_and_Entry(
 				'sample tag', $cell_hash->{'orig'}
@@ -930,22 +944,33 @@ sub merge_cells {
 		);
 
 	}
-	
-	$self->{'PDL'}->slice( ":," . $self->{'samples_in_result'}->{$main_cell->{'final'}} )
-	  += $self->{'PDL'}->slice(
-		":," . join( ":", map { $self->{'samples_in_result'}->{$_->{'final'}} } @cells ) );
 
-	$self->{'PDL'}->slice(
-		":," . $self->{'samples_in_result'}->{ $main_cell->{'final'} . " spliced" } ) +=
-	  $self->{'PDL'}->slice(
+	$self->{'PDL'}
+	  ->slice( ":," . $self->{'samples_in_result'}->{ $main_cell->{'final'} } )
+	  += $self->{'PDL'}->slice(
 		":,"
 		  . join( ":",
-			map { $self->{'samples_in_result'}->{ $_->{'final'} . " spliced" } } @cells )
+			map { $self->{'samples_in_result'}->{ $_->{'final'} } } @cells )
 	  );
-	foreach my $cell_hash (@cells){
 
-		$result->rename_column( $cell_hash->{'final'},              "merged $cell_hash->{'final'}" );
-		$result->rename_column( $cell_hash ->{'final'}. " spliced", "merged $cell_hash->{'final'} spliced" )
+	$self->{'PDL'}->slice( ":,"
+		  . $self->{'samples_in_result'}->{ $main_cell->{'final'} . " spliced" }
+	  ) += $self->{'PDL'}->slice(
+		":,"
+		  . join(
+			":",
+			map { $self->{'samples_in_result'}->{ $_->{'final'} . " spliced" } }
+			  @cells
+		  )
+	  );
+	foreach my $cell_hash (@cells) {
+
+		$result->rename_column( $cell_hash->{'final'},
+			"merged $cell_hash->{'final'}" );
+		$result->rename_column(
+			$cell_hash->{'final'} . " spliced",
+			"merged $cell_hash->{'final'} spliced"
+		);
 	}
 
 }
@@ -954,16 +979,18 @@ sub add_to_summary {
 	my ( $sampleID, $geneIDs, $is_spliced ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
-	#warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $debug);
-	#$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
+#warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $debug);
+#$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
 	my @col_number =
 	  $result->Add_2_Header( [ $sampleID, $sampleID . " spliced" ] );
+
 	#warn "\tI am processing the samples ".join(", ", @col_number)."\n";
 	$geneIDs = [$geneIDs] unless ( ref($geneIDs) eq "ARRAY" );
 	my ( @row_numbers, $row );
 	foreach my $gene_id (@$geneIDs) {
 		@row_numbers =
 		  $result->get_rowNumbers_4_columnName_and_Entry( 'Gene_ID', $gene_id );
+
 		#warn "\tand my gene row ids are: ".join(", ",@row_numbers)."\n";
 		if ( @row_numbers == 0 ) {    ## gene never occured
 			    #print "new gene $gene_id detected for sample $sampleID\n";
@@ -981,7 +1008,8 @@ sub add_to_summary {
 				else {
 					@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]++;
 				}
-				#warn "\tthe value has changed to ".@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]."\n";
+
+#warn "\tthe value has changed to ".@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]."\n";
 			}
 		}
 	}
@@ -1028,8 +1056,17 @@ sub lmin {
 
 sub get_chr_end_4_ids {
 	my ( $gtf, @lines ) = @_;
+	return unless ( scalar(@lines) );
 	return
-	  map { @{ @{ $gtf->{'data'} }[$_] }[ $gtf->Header_Position('end') ]; }
+	  map { if ( defined $_ ) {@{ @{ $gtf->{'data'} }[$_] }[ $gtf->Header_Position('end') ];} }
+	  @lines;
+}
+
+sub get_chr_start_4_ids {
+	my ( $gtf, @lines ) = @_;
+	return unless ( scalar(@lines) );
+	return
+	  map {if ( defined $_ ) { @{ @{ $gtf->{'data'} }[$_] }[ $gtf->Header_Position('start') ]; } }
 	  @lines;
 }
 
@@ -1051,6 +1088,6 @@ sub unique {
 
 sub unique_cell_hashes {
 	my $h;
-	map { $h->{$_->{'final'}} = $_ } @_;
+	map { $h->{ $_->{'final'} } = $_ } @_;
 	return sort { $a->{'final'} cmp $b->{'final'} } values %$h;
 }
