@@ -247,6 +247,7 @@ sub filter {
 		Carp::confess ( "Sorry I lack the UMI information - have you used SplitToCells.pl?");
 	}
 	$sample_name = join( "_", @matching_IDs[ 2, 3 ] );
+	
 
 #$sample_name = $self->{'cell_id_to_name'}->{$sample_name} if ( defined $self->{'cell_id_to_name'}->{$sample_name});
 	$UMI = $matching_IDs[4];
@@ -275,12 +276,14 @@ sub filter {
 	else {
 		@{ @{ $sample_table->{'data'} }[$sample_row] }[1]++;
 	}
-
+	#warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n";
 	## start with the real matching
 	@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] );
-	#warn "All OK - add it somewhere? @matching_IDs \n";
-	return if ( @matching_IDs == 0 );    ## no match to any gene / exon
-
+	#warn "\tAll OK - add it somewhere? ".join(", ",@matching_IDs )."\n";
+	if ( scalar(@matching_IDs) == 0 ){    ## no match to any gene / exon
+		#warn "\tNo matching featuires!\n";
+		return;
+	}
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
 
 	$self->{'UMI'}->{$sample_name} ||= {};
@@ -288,6 +291,7 @@ sub filter {
 	$self->{'UMIs'}->{$UMI}++;
 	if (  $self->{'UMIs'}->{$UMI} > 1 ){
 		$self->{'duplicates'} ++;
+		#warn "\tNo a UMI duplicate ($UMI)\n" if ( $debug);
 		return;
 	} ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
@@ -322,6 +326,11 @@ my $pm = Parallel::ForkManager->new($forks);
 
 
 $runs= 0;
+
+$self->{'end'} = 0;
+$self->{'next_start'} = 0;
+$self->{'last_IDS'} = [];
+
 $bam_file->filter_file( $infile, \&filter );
 $self->{total_reads} = $runs;
 
@@ -420,7 +429,7 @@ foreach ( keys %{ $self->{'samples_in_result'} } ) {
 }
 $| = 1;
 print "Calculating colum sums for "
-  . ( $sample_table->Rows() / 2 )
+  . ( $sample_table->Rows()  )
   . " samples:\n";
 my $data_col_name;
 
@@ -430,12 +439,15 @@ $self->{PDL}      = long( @{ $result->{'data'} } );
 $self->{PDL}      = $self->{PDL}->transpose();
 $result->{'data'} = undef;
 
-#$result->GetAsPDL();
+#print "this is the gene pdl: ".$self->{PDL};
 
 &measure_time_and_state("Creating the PDL");
 
 my $sums = $self->{PDL}->sumover();
 $sums = unpdl($sums);
+
+#print "this is the summary over the pdl: ". join(", ",@$sums)."\n";
+
 
 $sample_table->add_column( 'total UMI count',
 	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
@@ -446,12 +458,14 @@ $sample_table->add_column( 'spliced UMI count',
 $sample_table->add_column( 'spliced UMI count no merge',
 	@$sums[ map { $_ * 2 + 1 } 0 .. ( $sample_table->Rows() - 1 ) ] );
 
+#print "The finished sample table:\n".$sample_table->AsString()."\n";
+
 &measure_time_and_state(
 	"Calculate the sum over " . $sample_table->Rows() . " samples" );
 
 ## now I need to merge the samples!
 
-print "\nStarting to merge cells that share a UMI in an exon\n";
+print "\nStarting to merge cells that share a UMI in an exon\n" if ( $debug);
 
 $sample_table->Add_2_Header( [ 'merged to', 'merge evidence', 'stringdist' ] );
 
@@ -459,6 +473,9 @@ foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
 	&merge_cells( split( " ", $_ ) );
 }
 delete( $self->{'mergable'} );
+
+#print "The finished sample table after merge:\n".$sample_table->AsString()."\n" if ( $debug );
+
 
 &measure_time_and_state(
 	"\nMering cells where the same UMI tagged the same transcript");
@@ -504,10 +521,13 @@ if ($debug) {
 
 $subsetted_data->{'data'} =
   unpdl( $self->{'PDL'}->xchg( 0, 1 )->dice_axis( 0, \@wanted_positions ) );
+  
+$subsetted_data->add_column( 'Gene_ID', @$Gene_IDs );
 
+print "The subsetted pdl data:" . $subsetted_data->AsString()."\n" if ($debug);
 #$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
 
-$subsetted_data->add_column( 'Gene_ID', @$Gene_IDs );
+
 $result        = undef;
 $result        = $subsetted_data;
 $self->{'PDL'} = undef;
@@ -516,6 +536,9 @@ $self->{'PDL'} = undef;
 $sample_table->write_table( $tmp . ".samples_after_sum_add.xls" );
 
 $sample_table->drop_rows( 'merged to', sub { defined $_[0] } );
+
+print "The sample table after a strange drop_rows:" . $sample_table->AsString()."\n" if ($debug);
+print "And the final result table:\n".$result->AsString()."\n" if ($debug);
 
 $| = 0;
 
@@ -549,8 +572,8 @@ $result->define_subset( 'keep',
 @export      = $result->Header_Position('keep');
 @sampleNames = @{ $result->{'header'} }[@export];
 
-$sample_table = $sample_table->select_where( 'total UMI count',
-	sub { ( defined $_[0] and $_[0] > 0 ) } );
+#$sample_table = $sample_table->select_where( 'total UMI count',
+#	sub { ( defined $_[0] and $_[0] > 0 ) } );
 
 $sample_table = $sample_table->select_where( 'total UMI count',
 	sub { ( defined $_[0] and $_[0] >= $options->{'min_UMIs'} ) } );
@@ -653,7 +676,9 @@ sub get_matching_ids {
 
 #return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
 	if ( $self->{'end'} <= $start ) {# match to a new feature
+		#warn "get_matching_ids end < start ($self->{'end'} < $start)\n";
 		&reinit_UMI();
+		$self->{'last_IDS'} = [];
 		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
 
 #		warn
@@ -678,13 +703,18 @@ sub get_matching_ids {
 		$self->{'end'} = &lmin( &get_chr_end_4_ids( $gtf, @IDS ) );
 		$self->{'last_IDS'} = \@IDS;
 	}
+	elsif ( $start < $self->{'end'} ){
+		#warn "\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n";
+		@IDS = @{ $self->{'last_IDS'} };
+	}
 	elsif ( $start < $self->{'next_start'} ) {
+		#warn "\tNo match needed?!( $start < $self->{'next_start'} )\n";
 		@IDS = ();    ## no match needed...
 	}
 	else {
-		## the read is still in the old matching area
-		@IDS = @{ $self->{'last_IDS'} };
+		die "I assume I should never get here?\n";
 	}
+	$self->{'last_IDS'} = \@IDS;
 	return @IDS;
 }
 
@@ -924,14 +954,17 @@ sub add_to_summary {
 	my ( $sampleID, $geneIDs, $is_spliced ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
+	#warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $debug);
 	#$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
 	my @col_number =
 	  $result->Add_2_Header( [ $sampleID, $sampleID . " spliced" ] );
+	#warn "\tI am processing the samples ".join(", ", @col_number)."\n";
 	$geneIDs = [$geneIDs] unless ( ref($geneIDs) eq "ARRAY" );
 	my ( @row_numbers, $row );
 	foreach my $gene_id (@$geneIDs) {
 		@row_numbers =
 		  $result->get_rowNumbers_4_columnName_and_Entry( 'Gene_ID', $gene_id );
+		#warn "\tand my gene row ids are: ".join(", ",@row_numbers)."\n";
 		if ( @row_numbers == 0 ) {    ## gene never occured
 			    #print "new gene $gene_id detected for sample $sampleID\n";
 			my $hash = { 'Gene_ID' => $gene_id, $sampleID => 1 };
@@ -948,6 +981,7 @@ sub add_to_summary {
 				else {
 					@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]++;
 				}
+				#warn "\tthe value has changed to ".@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]."\n";
 			}
 		}
 	}
