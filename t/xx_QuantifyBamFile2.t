@@ -109,7 +109,7 @@ $value = $db->get_data_table_4_search(
 	}
 );
 
-ok( $value->Rows() == 48, "48 samples" );
+ok( $value->Rows() == 48, "48 samples (".$value->Rows().")" );
 
 #print "\$exp = ".root->print_perl_var_def([keys %{$value->createIndex('gname')}]).";\n";
 

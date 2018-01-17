@@ -117,7 +117,7 @@ close ( LOG );
 
 ## Do whatever you want!
 
-my $obj = stefans_libs::database::Chromium_SingleCell::datavalues -> new( $outfile );
+my $obj = stefans_libs::database::Chromium_SingleCell::datavalues -> new( {file => $outfile} );
 
 my $batch = stefans_libs::database::SQLiteBatch->new();
 

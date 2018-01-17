@@ -85,6 +85,8 @@ Getopt::Long::GetOptions(
 my $warn  = '';
 my $error = '';
 
+my $bugfix = 0;
+
 unless ( defined $infile ) {
 	$error .= "the cmd line switch -infile is undefined!\n";
 }
@@ -231,21 +233,17 @@ sub table_max {
 	} @data;
 }
 
-sub filter {
-	shift;
-	my @bam_line = split( "\t", shift );
-	return if ( $bam_line[0] =~ m/^\@/ );
-	$runs++;
-
-	if ( $runs % 1e4 == 0 ) {
-		print ".";
-	}
-
+sub sample_and_umi_my{
+	my ( @bam_line ) = @_;
 #NB501227:57:HGJM5BGX2:1:23206:13379:6742:S_GATCTCAG_C_TATGCCCTCCATTCTA_CAGGTGAAGC
-	@matching_IDs = split( ":", $bam_line[0] );
+	my ( $sample_name, $UMI);
+	my @matching_IDs = split( ":", $bam_line[0] );
 	@matching_IDs = split( "_", pop(@matching_IDs) );
 
 	if ( ( !defined $matching_IDs[2] ) or ( !defined $matching_IDs[3] ) ) {
+		#die "\$exp = " . root->print_perl_var_def( [sample_and_umi_cellranger(@bam_line)] ) . ";\n";
+		
+		return sample_and_umi_cellranger(@bam_line);
 		Carp::confess(
 			"Sorry I lack the UMI information - have you used SplitToCells.pl?"
 		);
@@ -254,7 +252,35 @@ sub filter {
 
 #$sample_name = $self->{'cell_id_to_name'}->{$sample_name} if ( defined $self->{'cell_id_to_name'}->{$sample_name});
 	$UMI = $matching_IDs[4];
+	return ($sample_name, $UMI );
+}
 
+sub sample_and_umi_cellranger {
+	my ( @bam_line ) = @_;
+	my ( $sample_name, $UMI);
+	foreach ( @bam_line ) {
+		#$sample_name = $1 if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/);
+		$sample_name = $1 if ( $_ =~m/CR:Z:([AGCTN]+)$/ );
+		$UMI = $1 if ( $_ =~m/UR:Z:([ACTGN]+)$/);
+	}
+	return ($sample_name, $UMI );
+}
+
+
+sub filter {
+	shift;
+	my @bam_line = split( "\t", shift );
+	return if ( $bam_line[0] =~ m/^\@/ );
+	#die if ( $runs == 100);
+	$runs++;
+
+	if ( $runs % 1e4 == 0 ) {
+		print ".";
+	}
+	($sample_name, $UMI ) = sample_and_umi_my ( @bam_line );
+	Carp::confess(
+		"Sorry I lack the UMI information - have you used SplitToCells.pl?\n\t". join("\t",@bam_line)
+	) unless ( defined $UMI and defined $sample_name);
 	$sample_row = undef;
 	($sample_row) =
 	  $sample_table->get_rowNumbers_4_columnName_and_Entry( 'sample tag',
@@ -280,13 +306,13 @@ sub filter {
 		@{ @{ $sample_table->{'data'} }[$sample_row] }[1]++;
 	}
 
- #warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n";
+ warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n" if ( $bugfix);
 	## start with the real matching
 	@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] );
 
-	#warn "\tAll OK - add it somewhere? ".join(", ",@matching_IDs )."\n";
+	warn "\tAll OK - add it somewhere? ".join(", ",@matching_IDs )."\n" if ( $bugfix);
 	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
-		                                   #warn "\tNo matching featuires!\n";
+		#warn "\tNo matching featuires!\n";
 		return;
 	}
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
@@ -297,8 +323,8 @@ sub filter {
 	if ( $self->{'UMIs'}->{$UMI} > 1 ) {
 		$self->{'duplicates'}++;
 
-		#warn "\tNo a UMI duplicate ($UMI)\n" if ( $debug);
-		return;
+		warn "\tNo a UMI duplicate ($UMI)\n" if ( $bugfix);
+#		return;
 	}    ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
 
@@ -671,7 +697,7 @@ close(LOG);
 
 sub get_matching_ids {
 	my ( $gtf, $chr, $start ) = @_;
-	my ( @IDS, $nextID, @starts, @ends );
+	my ( @IDS, $nextID );
 	unless ( $self->{'chr'} eq $chr ) {
 		$self->{'chr'} = $chr;
 		$self->{'end'} = 0;
@@ -682,17 +708,17 @@ sub get_matching_ids {
 
 #return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
 	if ( $self->{'end'} <= $start and $start < $self->{'next_start'} ){
-		#warn "get_matching_ids intergenic - return\n";
+		warn "get_matching_ids intergenic - return\n" if ( $bugfix);
 		return();
 	}
-	if ( $self->{'end'} <= $start ) {    # match to a new feature
-		#warn "get_matching_ids end < start ($self->{'end'} < $start)\n";
+	if ( $self->{'end'} <= $start) {    # match to a new feature
+		warn "get_matching_ids end < start ($self->{'end'} < $start)\n" if ( $bugfix);
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
 		@IDS    = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
+		my ( $match, $next,@OK, $lastOK , @starts, @ends);
 		@starts = &get_chr_start_4_ids( $gtf,@IDS);
 		@ends   = &get_chr_end_4_ids( $gtf,@IDS);
-		my ( $match, $next,@OK, $lastOK );
 		$lastOK = 0;
 		$self->{'end'} = 0;
 		map {
@@ -701,24 +727,24 @@ sub get_matching_ids {
 				## matching
 				push( @OK, $IDS[$_] );
 				$self->{'end'} ||= $ends[$_];
+				$self->{'end'} = $ends[$_] if ( $ends[$_] < $self->{'end'});
 				$lastOK = 1;
 			}elsif ( $lastOK == 1 and $starts[$_] > $start) {
 				$self->{'next_start'} = $starts[$_];
 				$lastOK = 0;
 			}
 		} 0 .. ( scalar(@IDS) - 1 );
-
-		#warn "I have identified the matching IDS as ".join(", ", @OK). " abnd the next start as $self->{'next_start'}\n";
+		@starts = @ends = undef;
+		warn "I have identified the matching IDS as ".join(", ", @OK). " and the next start as $self->{'next_start'}\n" if ( $bugfix);
 		
 		@IDS = @OK;
 	}
 	elsif ( $start < $self->{'end'} ) {
-		#warn
-#"\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n";
+		warn"\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n" if ( $bugfix);
 		@IDS = @{ $self->{'last_IDS'} };
 	}
 	elsif ( $start < $self->{'next_start'} ) {
-		#warn "\tNo match needed?!( $start < $self->{'next_start'} )\n";
+		warn "\tNo match needed?!( $start < $self->{'next_start'} )\n" if ( $bugfix);
 		@IDS = ();    ## no match needed...
 	}
 	else {
@@ -752,6 +778,9 @@ sub reinit_UMI {
 			}
 		}
 	}
+	$self->{'next_start'} = 0;
+	$self->{'end'} = 0;
+	$self->{'last_IDS'} = [];
 	$self->{'UMI'} = {};
 }
 
@@ -979,7 +1008,7 @@ sub add_to_summary {
 	my ( $sampleID, $geneIDs, $is_spliced ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
-#warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $debug);
+warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $bugfix);
 #$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
 	my @col_number =
 	  $result->Add_2_Header( [ $sampleID, $sampleID . " spliced" ] );

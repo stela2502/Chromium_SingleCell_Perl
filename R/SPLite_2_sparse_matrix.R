@@ -46,7 +46,9 @@ SQLite_2_sparseMatrix <- function ( fname ) {
 		if ( nrow(t) > 0 ) {
 			ret[t$gene_id, i] <- t$value
 		}
-		print ( paste( "done with sample ",i, "(",nrow(t)," gene entries )"))
+		if ( i %% 100 == 0 ) {
+			print ( paste( "done with sample ",i, "(",nrow(t)," gene entries )"))
+		}
 	}
 	dbClearResult(sth)
 	rm(sth)
