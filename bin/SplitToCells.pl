@@ -24,6 +24,9 @@
        -R2       :the R2 fastq file
        -I1       :the I1 fastq file
        -outpath  :the outpath for the sample specific fastq files
+       -split    :if you supply a list of fastq files for each R1 R2 and I1
+                  this data can be summed up in one fastq file (default)
+                  or split into n fastq files using this option
        
        -options  :the options in format key 'value1 value2 value3 ...'
        
@@ -57,73 +60,75 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
-
-my ( $help, $debug, $database, $R1, $R2, $I1, $outpath, $options, @options);
-
-Getopt::Long::GetOptions(
-	 "-R1=s"    => \$R1,
-	 "-R2=s"    => \$R2,
-	 "-I1=s"    => \$I1,
-	 "-outpath=s"    => \$outpath,
-       "-options=s{,}"    => \@options,
-
-	 "-help"             => \$help,
-	 "-debug"            => \$debug
+my (
+	$help, $debug,   $database, @R1,      @R2,
+	@I1,   $outpath, $options,  @options, $split
 );
 
-my $warn = '';
+Getopt::Long::GetOptions(
+	"-R1=s{,}"      => \@R1,
+	"-R2=s{,}"      => \@R2,
+	"-I1=s{,}"      => \@I1,
+	"-outpath=s"    => \$outpath,
+	"-options=s{,}" => \@options,
+	"-split"        => \$split,
+
+	"-help"  => \$help,
+	"-debug" => \$debug
+);
+
+my $warn  = '';
 my $error = '';
 
-unless ( defined $R1) {
+unless ( -f $R1[0] ) {
 	$error .= "the cmd line switch -R1 is undefined!\n";
 }
-unless ( defined $R2) {
+unless ( -f $R2[0] ) {
 	$error .= "the cmd line switch -R2 is undefined!\n";
 }
-unless ( defined $I1) {
+unless ( -f $I1[0] ) {
 	$error .= "the cmd line switch -I1 is undefined!\n";
 }
-unless ( defined $outpath) {
+unless ( defined $outpath ) {
 	$error .= "the cmd line switch -outpath is undefined!\n";
 }
-unless ( defined $options[0]) {
+unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
 }
 
-
-if ( $help ){
-	print helpString( ) ;
+if ($help) {
+	print helpString();
 	exit;
 }
 
-if ( $error =~ m/\w/ ){
-	helpString($error ) ;
+if ( $error =~ m/\w/ ) {
+	helpString($error);
 	exit;
 }
 
 sub helpString {
 	my $errorMessage = shift;
-	$errorMessage = ' ' unless ( defined $errorMessage); 
+	$errorMessage = ' ' unless ( defined $errorMessage );
 	print "$errorMessage.\n";
-	pod2usage(q(-verbose) => 1);
+	pod2usage( q(-verbose) => 1 );
 }
 
 ### initialize default options:
 
 $options->{'cell_barcode_length'} ||= 16;
-$options->{'oname'} ||= 'projectX';
+$options->{'oname'}               ||= 'projectX';
 ###
 
+my ($task_description);
 
-my ( $task_description);
-
-$task_description .= 'perl '.$plugin_path .'/SplitToCells.pl';
-$task_description .= " -R1 '$R1'" if (defined $R1);
-$task_description .= " -R2 '$R2'" if (defined $R2);
-$task_description .= " -I1 '$I1'" if (defined $I1);
-$task_description .= " -outpath '$outpath'" if (defined $outpath);
-$task_description .= ' -options "'.join( '" "', @options ).'"' if ( defined $options[0]);
-
+$task_description .= 'perl ' . $plugin_path . '/SplitToCells.pl';
+$task_description .= " -R1 '" . join( "', '", @R1 ) . "'";
+$task_description .= " -R2 '" . join( "', '", @R2 ) . "'";
+$task_description .= " -I1 '" . join( "', '", @I1 ) . "'";
+$task_description .= " -outpath '$outpath'" if ( defined $outpath );
+$task_description .= ' -options "' . join( '" "', @options ) . '"'
+  if ( defined $options[0] );
+$task_description .= ' -split' if ($split);
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -133,11 +138,14 @@ for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 #$options->{'something'} ||= 'default value';
 ##############################
 
-mkdir( $outpath ) unless ( -d $outpath );
-open ( LOG , ">$outpath/$outpath/$options->{'oname'}.annotated.fastq.gz".$$."_SplitToCells.pl.log") or die $!;
-print LOG $task_description."\n";
-close ( LOG );
-
+mkdir($outpath) unless ( -d $outpath );
+open( LOG,
+	    ">$outpath/$options->{'oname'}.annotated.fastq.gz"
+	  . $$
+	  . "_SplitToCells.pl.log" )
+  or die $!;
+print LOG $task_description . "\n";
+close(LOG);
 
 ## Do whatever you want!
 
@@ -170,40 +178,133 @@ close ( LOG );
 
 my $ofiles;
 my $counter;
+my $filtered_out   = 0;
+my $filtered_polyT = 0;
 
-my $ofile = "$outpath/$options->{'oname'}.annotated.fastq.gz";
-open ( my $OUT ,"| /bin/gzip -c > $ofile" ) or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
+sub filter_reads {
+	my ( $read, $min_length ) = @_;
 
+	$min_length ||= 10;
 
-my $func = sub{
-	my ($fastqfile, @entries) = @_;## f1, f2, i1
-	
-	my $cellid = "S_". $entries[2]->sequence()."_C_". substr($entries[1]->sequence,0,$options->{'cell_barcode_length'});
-	my $UMI_tag = substr($entries[1]->sequence,$options->{'cell_barcode_length'});
-	$counter->{$cellid} ++;
-	$entries[0]->Add_UMI_Tag($cellid."_".$UMI_tag);
-	$entries[0]->write( $OUT );	
-	
+	## filter polyT at read end
+	if ( $read->sequence() =~ m/([Aa]{9}[Aa]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$filtered_polyT++;
+	}
+	if ( $read->sequence() =~ m/([Tt]{9}[Tt]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$filtered_polyT++;
+	}
+	## filter reads with high ployX (>= 50%)
+
+	my $str = $read->sequence();
+	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
+		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
+			my $by = 'N' x length($repl);
+			$str =~ s/$repl/$by/;
+		}
+	}
+	my $count = $str =~ tr/N/n/;
+
+	if ( $count != 0 and $count / length($str) > 0.5 ) {
+		return undef;
+	}
+
+	## return filtered read
+
+	return $read;
+}
+my ( $ofile, $OUT );
+
+my $func = sub {
+	my ( $fastqfile, @entries ) = @_;    ## f1, f2, i1
+
+	my $UMI_tag = filter_reads( $entries[0] );
+
+	if ( defined $UMI_tag and length( $UMI_tag->sequence() ) > 50 ) {
+		$entries[0] = $UMI_tag;
+		my $cellid = "S_"
+		  . $entries[2]->sequence() . "_C_"
+		  . substr( $entries[1]->sequence, 0,
+			$options->{'cell_barcode_length'} );
+		$UMI_tag =
+		  substr( $entries[1]->sequence, $options->{'cell_barcode_length'} );
+		$counter->{$cellid}++;
+		$entries[0]->Add_UMI_Tag( $cellid . "_" . $UMI_tag );
+		$entries[0]->write($OUT);
+	}
+	else {
+		$filtered_out++;
+	}
+
 	for ( my $i = 0 ; $i < @entries ; $i++ ) {
 		$entries[$i]->clear();
 	}
 };
 
-my $worker = stefans_libs::FastqFile->new();
+my ( $R1, $R2, $I1 );
 
+if ($split) {
+	my $worker = stefans_libs::FastqFile->new();
+	print "Started a split run on ".scalar(@R2)." file sets\n";
+	for ( my $i = 0 ; $i < @R2 ; $i++ ) {
+		print "Process file $i R1: '$R1[$i]'\n";
+		$ofile = "$outpath/$options->{'oname'}.$i.annotated.fastq.gz";
+		open( $OUT, "| /bin/gzip -c > $ofile" )
+		  or die
+		  "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
 
-$worker->filter_multiple_files(
-	$func, $R2, $R1, $I1
-);
+		( $R1, $R2, $I1 ) = ( $R1[$i], $R2[$i], $I1[$i] );
+		$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
 
-close ( $OUT );
+		close($OUT);
 
+		open( OUT, ">$outpath/$options->{'oname'}.$i.per_cell_read_count.xls" )
+		  or die
+"I could not open the file '$outpath/$options->{'oname'}.$i.per_cell_read_count.xls'\n$!\n";
+		print OUT "#reads containing polyA:\t$filtered_polyT\n";
+		print OUT "#filtered low complexity reads:\t$filtered_out\n";
 
-open ( OUT ,">$outpath/$options->{'oname'}.per_cell_read_count.xls" ) or die "I could not open the file '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n$!\n";
-print OUT "Cell_ID\tcount\n";
-foreach my $key ( sort  keys %$counter ) {
-	print OUT "$key\t$counter->{$key}\n";
+		print OUT "Cell_ID\tcount\n";
+		foreach my $key ( sort keys %$counter ) {
+			print OUT "$key\t$counter->{$key}\n";
+		}
+		close(OUT);
+		$filtered_polyT = $filtered_out = 0;
+		$counter = undef;
+	}
 }
-close ( OUT );
-print "A detailed per cell read count has been written to '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n";
+else {
+	print "Started a summary run on ".scalar(@R2)." file sets\n";
+	
+	$ofile = "$outpath/$options->{'oname'}.annotated.fastq.gz";
+	open( $OUT, "| /bin/gzip -c > $ofile" )
+	  or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
+
+	my $worker = stefans_libs::FastqFile->new();
+
+	for ( my $i = 0 ; $i < @R2 ; $i++ ) {
+		print "Process file $i R1: '$R1[$i]'\n";
+		
+		( $R1, $R2, $I1 ) = ( $R1[$i], $R2[$i], $I1[$i] );
+		$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
+	}
+
+	close($OUT);
+
+	open( OUT, ">$outpath/$options->{'oname'}.per_cell_read_count.xls" )
+	  or die
+"I could not open the file '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n$!\n";
+	print OUT "#reads containing polyA:\t$filtered_polyT\n";
+	print OUT "#filtered low complexity reads:\t$filtered_out\n";
+
+	print OUT "Cell_ID\tcount\n";
+	foreach my $key ( sort keys %$counter ) {
+		print OUT "$key\t$counter->{$key}\n";
+	}
+	close(OUT);
+}
+
+print
+"A detailed per cell read count has been written to '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n";
 
