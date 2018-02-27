@@ -24,12 +24,6 @@
        -gtf_file :the gtf file for quantification
        -outfile  :the tab separated outfile (will be overwritten)
        -forks    :how many processors to use? default =4
-       
-       -fastqPath :The path where the original fastq files were converted to the here used input files
-       -sampleID  :The sampleID of the 10X sample to process
-       -minReads  :the minimum number of reads in at least one fastq files to consider a sample usable
-                   for one NextSeq run the default value '100' proved usable. 
-       
        -options  : format: key_1 value_1 key_2 value_2 ... key_n value_n
 
            quantify_on: which feature to select for quantification from the gtf file (default 'exon')
@@ -51,7 +45,7 @@ use Getopt::Long;
 use Pod::Usage;
 
 use stefans_libs::BAMfile;
-use stefans_libs::result_table;
+use stefans_libs::flexible_data_structures::data_table;
 
 use stefans_libs::file_readers::gtf_file;
 use Digest::MD5 qw(md5_hex);
@@ -74,8 +68,8 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 my (
-	$help,  $debug,   $database, $infile, $gtf_file,$minReads,
-	$forks, $outfile, $options, $fastqPath, $sampleID, @options ,
+	$help,  $debug,   $database, $infile, $gtf_file,
+	$forks, $outfile, $options,  @options
 );
 
 Getopt::Long::GetOptions(
@@ -84,9 +78,6 @@ Getopt::Long::GetOptions(
 	"-outfile=s"    => \$outfile,
 	"-options=s{,}" => \@options,
 	"-forks=s"      => \$forks,
-	"-fastqPath=s"  => \$fastqPath,
-	"-sampleID=s"   => \$sampleID,
-	"-minReads=s"   => \$minReads,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -109,21 +100,9 @@ unless ( defined $outfile ) {
 unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
 }
-unless ( defined $minReads ) {
-	$warn .= "the cmd line switch -minReads is undefined!\t set to 100";
-	$minReads = 100;
-}
 unless ( defined $forks ) {
-	$forks = 1;
+	$forks = 4;
 }
-
-unless ( -d $fastqPath ) {
-	$error .= "the cmd line switch -fastqPath is undefined!\n";
-}
-unless ( defined $sampleID ) {
-	$error .= "the cmd line switch -sampleID is undefined!\n";
-}
-
 
 if ($help) {
 	print helpString();
@@ -150,10 +129,6 @@ $task_description .= " -gtf_file '$gtf_file'" if ( defined $gtf_file );
 $task_description .= " -outfile '$outfile'" if ( defined $outfile );
 $task_description .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
-$task_description .= ' -fastqPath '.$fastqPath;
-$task_description .= ' -forks '.$forks;
-$task_description .= ' -minReads '. $minReads;
-$task_description .= ' -sampleID '. $sampleID;
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -190,8 +165,9 @@ print LOG $task_description . "\n";
 ## Do whatever you want!
 
 my $bam_file = stefans_libs::BAMfile->new();
-$outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/ ); 
-my $result   = stefans_libs::result_table->new({ filename => $outfile,'data_storage_spliced' => 1  });
+my $result   = data_table->new();
+$result->Add_2_Header('Gene_ID');
+$result->createIndex('Gene_ID');
 
 my $start       = time;
 my $first_start = $start;
@@ -213,43 +189,10 @@ print "Preparation of the gtf file took: $duration s\n";
 print LOG "Preparation of the gtf file took: $duration s\n";
 $start = time;
 
-print "processing the initial sample summary files and detect usable cell ids.\n";
-
-opendir(DIR, $fastqPath ) or die "I could not open the path '$fastqPath'\n$!";
-
-my @samplefiles = grep { !/^\./ }  grep { $sampleID } readdir(DIR) ;
-my ($OK, @tmp, $reads);
-@samplefiles = map{ join("/", $fastqPath, $_) } @samplefiles;
-	
-foreach my $file ( grep { /xls$/ } @samplefiles ) {
-	print "I process file $file\n";
-	open ( IN , "<$file" ) or die "I could not open file '$file'\n$!\n";
-	while( <IN> ) {
-		next if $_ =~ m/^#/;
-		chomp;
-		@tmp = split("\t", $_ );
-		next if ( $tmp[1] eq "count");
-		if ( $tmp[1] >= $minReads ) {
-			$reads = $tmp[1];
-			@tmp = split("_", $tmp[0] );
-			$OK->{$tmp[3]} += $reads;
-		}
-	}
-	close ( IN );
-}
-$sum = 0;
-map{ $sum += $_ } values %$OK;
-
-print "I got ".scalar( keys %$OK ) . " passing samples with a total of $sum reads\n";
-
 $sample_table = data_table->new();
 $sample_table->Add_2_Header(
-	[ 'sample tag', 'total reads', 'mapped', 'in gene', 'unmapped' ] );
-foreach my $cell ( sort keys %$OK ) {
-	push ( @{$sample_table->{'data'}}, [$cell, $OK->{$cell}]);
-}
+	[ 'sample tag', 'mapped', 'in gene', 'unmapped' ] );
 $sample_table->createIndex('sample tag');
-
 
 my $runs = 0;
 my $adds = 0;
@@ -306,7 +249,7 @@ sub sample_and_umi_my{
 			"Sorry I lack the UMI information - have you used SplitToCells.pl?"
 		);
 	}
-	$sample_name = $matching_IDs[ 3 ] ;
+	$sample_name = join( "_", @matching_IDs[ 2, 3 ] );
 
 #$sample_name = $self->{'cell_id_to_name'}->{$sample_name} if ( defined $self->{'cell_id_to_name'}->{$sample_name});
 	$UMI = $matching_IDs[4];
@@ -336,7 +279,6 @@ sub filter {
 		print ".";
 	}
 	($sample_name, $UMI ) = sample_and_umi_my ( @bam_line );
-	return unless ( $OK->{$sample_name}); ## new way to get rid of crap
 	Carp::confess(
 		"Sorry I lack the UMI information - have you used SplitToCells.pl?\n\t". join("\t",@bam_line)
 	) unless ( defined $UMI and defined $sample_name);
@@ -348,7 +290,6 @@ sub filter {
 		$sample_table->AddDataset(
 			{
 				'sample tag' => $sample_name,
-				'total reads' => "NA",
 				'mapped'     => 0,
 				'in gene'    => 0,
 				'unmapped'   => 0
@@ -359,11 +300,11 @@ sub filter {
 			$sample_name );
 	}
 	unless ( $bam_line[2] =~ m/^chr/ ) {
-		@{ @{ $sample_table->{'data'} }[$sample_row] }[4]++;
+		@{ @{ $sample_table->{'data'} }[$sample_row] }[3]++;
 		return;
 	}
 	else {
-		@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
+		@{ @{ $sample_table->{'data'} }[$sample_row] }[1]++;
 	}
 
  warn "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n" if ( $bugfix);
@@ -406,18 +347,15 @@ sub filter {
 				)
 			)
 		);
-		if ( @matching_IDs  > 0) {
-			print "What a matching ID do I have here?:". join( ", ", @matching_IDs)."\n";
-			&add_to_summary( $sample_name, \@matching_IDs, 1 );
-		}
+		&add_to_summary( $sample_name, @matching_IDs, 1 );
 	}
 	else {
-		&add_to_summary( $sample_name, \@matching_IDs, 0 );
+		&add_to_summary( $sample_name, @matching_IDs, 0 );
 	}
 
 }
 
-#my $pm = Parallel::ForkManager->new($forks);
+my $pm = Parallel::ForkManager->new($forks);
 
 $runs = 0;
 
@@ -435,12 +373,6 @@ print
   . sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
   . "%)\n";
 
-##And here is where I stop the whole process this time as all other steps can be done in R.
-
-$result->print2table();
-print "The file '$outfile' now contains all results from bam file '$infile'\n";
-exit(1);
-
 #print "drop me 1". $result->AsString();
 ## now I can drop the quantifier and the gff
 
@@ -449,7 +381,7 @@ $gtf_obj   = undef;
 
 ### done with the quantification - now the error check starts
 
-my (  $sample_row_id, @export, @sampleNames, $tmp );
+my ( @tmp, $sample_row_id, @export, @sampleNames, $tmp );
 
 $| = 0;    ## buffer file output again (default)
 
@@ -513,7 +445,7 @@ if ($debug) {
 		  unless ( @{ @{ $sample_table->{'data'} }[$i] }[0] eq
 			@{ $result->{'header'} }[ ( $i * 2 ) + 1 ] );
 	}
-	die "The order has not been changed in the right way!\n" unless ($OK);
+	die "The order has not been chenged in the right way!\n" unless ($OK);
 }
 
 $sample_table->write_table( $tmp . "sample_table_original" );
@@ -1080,23 +1012,41 @@ sub add_to_summary {
 warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if ( $bugfix);
 #$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
 
-	$result -> AddDataset( {'Gene_ID' => '', 'Sample_ID' => 'Sample45', 'value'=> 12} ,1 ); ## add to existing values
-	
+	my @col_number =
+	  $result->Add_2_Header( [ $sampleID, $sampleID . " spliced" ] );
+
+	#warn "\tI am processing the samples ".join(", ", @col_number)."\n";
+	$geneIDs = [$geneIDs] unless ( ref($geneIDs) eq "ARRAY" );
+	my ( @row_numbers, $row );
 	foreach my $gene_id (@$geneIDs) {
-		
-		$result -> AddDataset( {'Gene_ID' => $gene_id, 'Sample_ID' => $sampleID, 'value'=> 1} ,1 ); ## add to existing values
-		
-		if ( $is_spliced ) {
-			$result -> AddDataset( {'Gene_ID' => $gene_id, 'Sample_ID' => $sampleID. " spliced", 'value'=> 1} ,1 ); ## add to existing values
-		}else {
-			$result -> AddDataset( {'Gene_ID' => $gene_id, 'Sample_ID' => $sampleID, 'value'=> 1} ,1 ); ## add to existing values
+		@row_numbers =
+		  $result->get_rowNumbers_4_columnName_and_Entry( 'Gene_ID', $gene_id );
+
+		#warn "\tand my gene row ids are: ".join(", ",@row_numbers)."\n";
+		if ( @row_numbers == 0 ) {    ## gene never occured
+			    #print "new gene $gene_id detected for sample $sampleID\n";
+			my $hash = { 'Gene_ID' => $gene_id, $sampleID => 1 };
+			$hash->{ $sampleID . " spliced" } = 1 if ($is_spliced);
+			$result->AddDataset($hash);
+		}
+		else {
+			foreach my $row (@row_numbers) {
+				@{ $result->{'data'} }[$row] ||= [];
+				if ($is_spliced) {
+					@{ @{ $result->{'data'} }[$row] }
+					  [ @col_number[ 0, $is_spliced ] ]++;
+				}
+				else {
+					@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]++;
+				}
+
+#warn "\tthe value has changed to ".@{ @{ $result->{'data'} }[$row] }[ $col_number[0] ]."\n";
+			}
 		}
 	}
-	# this is a horrible performance killer!
 	if ($result->Lines() > 100 ) {
 		## Ok we shurely can store - say 50 of them in the database and get rid of the data here - or?
-		print "I am storing 50 gene results in the tables\n";
-		$result->print2table( undef, 50 );
+		hfmjmrzm
 	}
 
 }

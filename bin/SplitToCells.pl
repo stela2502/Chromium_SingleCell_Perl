@@ -120,15 +120,28 @@ $options->{'oname'}               ||= 'projectX';
 ###
 
 my ($task_description);
+for ( my $i = 0 ; $i < @options ; $i += 2 ) {
+	$options[ $i + 1 ] =~ s/\n/ /g;
+	$options->{ $options[$i] } = $options[ $i + 1 ];
+}
 
-$task_description .= 'perl ' . $plugin_path . '/SplitToCells.pl';
-$task_description .= " -R1 '" . join( "', '", @R1 ) . "'";
-$task_description .= " -R2 '" . join( "', '", @R2 ) . "'";
-$task_description .= " -I1 '" . join( "', '", @I1 ) . "'";
+my $tmp_oname;
+
+for ( my $i = 0 ; $i < @R1; $i ++ ){
+	$tmp_oname = $options->{'oname'};
+	$options->{'oname'} .= ".$i";
+	$task_description .= 'perl ' . $plugin_path . '/SplitToCells.pl';
+$task_description .= " -R1 '$R1[$i]'";
+$task_description .= " -R2 '$R2[$i]'";
+$task_description .= " -I1 '$I1[$i]'";
 $task_description .= " -outpath '$outpath'" if ( defined $outpath );
-$task_description .= ' -options "' . join( '" "', @options ) . '"'
+$task_description .= ' -options \'' . join("' '", (%$options) ) . "'"
   if ( defined $options[0] );
 $task_description .= ' -split' if ($split);
+$task_description .= "\n";
+	 $options->{'oname'} = $tmp_oname;
+}
+
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -195,6 +208,9 @@ sub filter_reads {
 		$read->trim( 'end', length( $read->sequence() ) - length($1) );
 		$filtered_polyT++;
 	}
+	
+	$read->filter_low_quality(20); ## throw away crap!
+	
 	## filter reads with high ployX (>= 50%)
 
 	my $str = $read->sequence();
