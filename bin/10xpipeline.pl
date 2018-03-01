@@ -265,6 +265,12 @@ $options->{'N'} = 1;
 $options->{'t'} ||= '02:00:00';
 
 my $SLURM = stefans_libs::SLURM->new($options, 0);
+
+my $slurmOptions;
+while ( my ($key, $value )= each %{$SLURM->{options}->options()} ){
+	$slurmOptions .= " '$key' '$value'";
+}
+
 $SLURM->{'debug'} = 1 if ($debug);
 
 ## Do whatever you want!
@@ -307,7 +313,12 @@ $start_this = DateTime->now();
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
 my $hisat2 =
-"hisat2_run_aurora.pl -files '".join("' '", @$sumFastqs)."' -outpath $outpath/HISAT2_mapped/ -options n 5 partitition $options->{'p'} A ".$options->{'A'};
+"hisat2_run_aurora.pl -files '".join("' '", @$sumFastqs)."' -outpath $outpath/HISAT2_mapped/"
+  . " -options n 5 partitition $options->{'p'} A ".$options->{'A'};
+ my $used = { map { $_ => 1}  qw( n A p N) };
+while ( my ($key, $value )= each %{$SLURM->{options}->options()} ){
+	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );
+}
 $hisat2 .=
 " -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
 $hisat2 .= " -fast_tmp '$fast_tmp' -justMapping";
@@ -317,16 +328,17 @@ print "we start the hist2 mapping process:\n".$hisat2."\n";
 
 #die "First make sure we got all files!\n";
 
-unless ( $debug) {
-	open( RUN, $hisat2 . " | " );
-	$SLURM_ids = [];
-	foreach (<RUN>) {
-		if ( $_ = /Submitted batch job (\d+)/ ) {
-			push(@$SLURM_ids,  $1 );
-		}
+
+open( RUN, $hisat2 . " | " );
+$SLURM_ids = [];
+foreach (<RUN>) {
+	if ( $_ = /Submitted batch job (\d+)/ ) {
+		push(@$SLURM_ids,  $1 );
 	}
-	close(RUN);
-}else {
+}
+close(RUN);
+
+if ( $debug) {
 	mkdir ( "$outpath/HISAT2_mapped/" ) unless ( -d "$outpath/HISAT2_mapped/" );
 	## and we would expect one outfile for all fastq files - so lets add some fake ones:
 	my $fm;
@@ -474,7 +486,7 @@ sub QuantifyBamFile {
 		my $cmd = "QuantifyBamFile.pl";
 		$cmd .= " -infile $bam_file";
 		$cmd .= " -outfile $opath.sqlite";
-		$cmd .= ' -options "' . join( '" "', @options ) . '"'
+		$cmd .= ' -options '.$slurmOptions 
   if ( defined $options[0] );
 		$cmd .= " -fastqPath $outpath";
 		$cmd .= " -sampleID $sname.$fm->{'filename_base'}";
@@ -580,14 +592,17 @@ sub SplitToCell {
 		$cmd .= " -R1 $R1[$i]";
 		$cmd .= " -R2 $R2[$i]";
 		$cmd .= " -outpath $fast_tmp";
-		$cmd .= " -options oname $ofile";
+		$cmd .= " -options oname $ofile". $slurmOptions;
 		$cmd .= "\ncp $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
 		$cmd .= "\ncp $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
 		$cmd .= "cp $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
 		unless ( -f  "$outpath/$ofile.annotated.fastq.gz" ){
-			push( @slurmIDs, $SLURM->run( $cmd, "$outpath/$ofile.annotated.fastq.gz" ) );
+			push( @slurmIDs, $SLURM->run( $cmd, "$outpath/$f->{'filename'}" ) );
 		}
 		push( @fastqs , "$outpath/$ofile.annotated.fastq.gz" );
+		if ( $debug ) { 
+			system( 'touch ' ."$outpath/$ofile.annotated.fastq.gz");
+		}
 		
 	}
 	return ( \@slurmIDs, \@fastqs);

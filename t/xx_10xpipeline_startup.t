@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 67;
+use Test::More tests => 164;
 use stefans_libs::flexible_data_structures::data_table;
 
 use FindBin;
@@ -36,7 +36,7 @@ ok( -f $coverage, "coverage file '$coverage'");
 
 $genome = '~/lunarc/indicies/hisat2/mouse/mm10/genome'; ## OK that is very specific - should I cerate a minimal here?
 
-@options = qw( A lsens2017-3-2 t 02:00:00 p dell min_UMIs 1 report_on gene_name);
+@options = qw( A lsens2017-3-2 t 02:00:00 p dell min_UMIs 1 report_on gene_name w nodelist=ls2-n4 );
 
 my $cmd =
     "perl -I $plugin_path/../lib  $exec "
@@ -53,7 +53,14 @@ my $cmd =
 . " -debug"
 ;
 
-
+sub fcontent { 
+	my $f = shift;
+	return () unless ( -f $f );
+	open ( OO, "<$f" ) or die "I could not open the file '$f'\n$!\n";
+	my @ret = map { chomp; $_} <OO>;
+	close ( OO );
+	@ret;
+}
 
 my $start = time;
 system( $cmd );
@@ -69,46 +76,71 @@ ok ( -d $run_folder, "run filkes folder" );
 
 
 my @scripts1 = qw(
-HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S5_L002.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S5_L003.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S5_L004.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S6_L001.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S6_L002.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S6_L003.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S6_L004.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S7_L001.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S7_L002.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S7_L003.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S7_L004.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S8_L001.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S8_L002.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S8_L003.annotated.fastq.sh
-HJ2GYBGX5_Ctrl-LSK_S8_L004.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S5_L002.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S5_L003.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S5_L004.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S6_L001.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S6_L002.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S6_L003.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S6_L004.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S7_L001.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S7_L002.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S7_L003.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S7_L004.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S8_L001.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S8_L002.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S8_L003.annotated.fastq.sh
-HTL2KBGX3_Ctrl-LSK_S8_L004.annotated.fastq.sh
-reshuffled/sampleX_reshuffle.sorted.sh
+Ctrl-LSK_S5_L001_R1_001.fastq.sh  Ctrl-LSK_S6_L003_R1_001.fastq.sh  Ctrl-LSK_S8_L001_R1_001.fastq.sh
+Ctrl-LSK_S5_L002_R1_001.fastq.sh  Ctrl-LSK_S6_L004_R1_001.fastq.sh  Ctrl-LSK_S8_L002_R1_001.fastq.sh
+Ctrl-LSK_S5_L003_R1_001.fastq.sh  Ctrl-LSK_S7_L001_R1_001.fastq.sh  Ctrl-LSK_S8_L003_R1_001.fastq.sh
+Ctrl-LSK_S5_L004_R1_001.fastq.sh  Ctrl-LSK_S7_L002_R1_001.fastq.sh  Ctrl-LSK_S8_L004_R1_001.fastq.sh
+Ctrl-LSK_S6_L001_R1_001.fastq.sh  Ctrl-LSK_S7_L003_R1_001.fastq.sh
+Ctrl-LSK_S6_L002_R1_001.fastq.sh  Ctrl-LSK_S7_L004_R1_001.fastq.sh
 );
 
 foreach  ( @scripts1 ) {
-	ok ( -f "$run_folder/$_", "script file '$_'")
+	ok ( -f "$run_folder/$_", "script file '$_'");
+	#print join("\n",  &fcontent("$run_folder/$_"));
+	ok (scalar( grep( /SBATCH \-w/, &fcontent("$run_folder/$_")) ) == 1, "script $_ contains -w SLURM option" );
+}
+
+## HISAT scripts:
+my @hisat_scripts = qw( HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S5_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L002.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S5_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L003.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S5_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L004.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S6_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L001.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S6_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L002.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S6_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L003.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S6_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L004.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S7_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L001.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S7_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L002.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S7_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L003.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S7_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L004.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S8_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L001.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S8_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L002.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S8_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L003.annotated.fastq.sh
+HJ2GYBGX5_Ctrl-LSK_S8_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L004.annotated.fastq.sh );
+
+foreach  ( @hisat_scripts ) {
+	ok ( -f "$run_folder/$_", "script file '$_'");
+	ok (scalar( grep( /SBATCH \-w/, &fcontent("$run_folder/$_")) ) == 1, "script $_ contains -w SLURM option" );
+}
+
+my @hisat_fake_output = qw(FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S5_L001.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S5_L001.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S5_L002.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S5_L002.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S5_L003.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S5_L003.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S5_L004.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S5_L004.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S6_L001.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S6_L001.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S6_L002.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S6_L002.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S6_L003.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S6_L003.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S6_L004.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S6_L004.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S7_L001.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S7_L001.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S7_L002.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S7_L002.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S7_L003.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S7_L003.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S7_L004.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S7_L004.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S8_L001.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S8_L001.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S8_L002.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S8_L002.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S8_L003.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S8_L003.sorted.bam
+FAKE_DEBUG_HJ2GYBGX5_Ctrl-LSK_S8_L004.sorted.bam  FAKE_DEBUG_HTL2KBGX3_Ctrl-LSK_S8_L004.sorted.bam
+);
+
+foreach  ( @hisat_fake_output ) {
+	ok ( -f "$run_folder/HISAT2_mapped/$_", "fake bam file '$_'");
 }
 
 ## reshuffle output
+
+$_ = 'reshuffled/sampleX_reshuffle.sorted.sh';
+
+ok ( -f "$run_folder/$_", "script file '$_'");
+ok (scalar( grep( /SBATCH \-w/, &fcontent("$run_folder/$_")) ) == 1, "script $_ contains -w SLURM option" );
 
 my @reshuffle = qw(chr2_sampleX.sorted.bam  chrX_sampleX.sorted.bam
 chr1_sampleX.sorted.bam         chr3_sampleX.sorted.bam  sampleX_reshuffle.sorted.sh

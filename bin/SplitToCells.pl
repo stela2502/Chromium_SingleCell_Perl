@@ -194,6 +194,12 @@ my $counter;
 my $filtered_out   = 0;
 my $filtered_polyT = 0;
 
+
+## turn on autoflush for the process bar:
+my $flush_counter = 0;
+$| = 1;
+
+
 sub filter_reads {
 	my ( $read, $min_length ) = @_;
 
@@ -226,6 +232,9 @@ sub filter_reads {
 		return undef;
 	}
 
+	if ( ++ $flush_counter %% 10000 == 0 ) {
+		print '.';
+	} 
 	## return filtered read
 
 	return $read;
