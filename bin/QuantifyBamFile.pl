@@ -27,14 +27,13 @@
        
        -fastqPath :The path where the original fastq files were converted to the here used input files
        -sampleID  :The sampleID of the 10X sample to process
-       -minReads  :the minimum number of reads in at least one fastq files to consider a sample usable
-                   for one NextSeq run the default value '100' proved usable. 
        
        -options  : format: key_1 value_1 key_2 value_2 ... key_n value_n
 
            quantify_on: which feature to select for quantification from the gtf file (default 'exon')
              report_on: which column in the gtf file object to report on (default 'gene_id')
-              min_UMIs: how many UMIs have to mapp to any gene to report the sample (default 100)
+              min_UMIs: how many UMIs have to mapp to any gene to report the sample 
+                        (for one NextSeq run the default value default 100 proved usable)
 
        -help           :print this help
        -debug          :verbose output
@@ -74,7 +73,7 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 my (
-	$help,  $debug,   $database, $infile, $gtf_file,$minReads,
+	$help,  $debug,   $database, $infile, $gtf_file,
 	$forks, $outfile, $options, $fastqPath, $sampleID, @options ,
 );
 
@@ -86,7 +85,6 @@ Getopt::Long::GetOptions(
 	"-forks=s"      => \$forks,
 	"-fastqPath=s"  => \$fastqPath,
 	"-sampleID=s"   => \$sampleID,
-	"-minReads=s"   => \$minReads,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -108,10 +106,6 @@ unless ( defined $outfile ) {
 }
 unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
-}
-unless ( defined $minReads ) {
-	$warn .= "the cmd line switch -minReads is undefined!\t set to 100";
-	$minReads = 100;
 }
 unless ( defined $forks ) {
 	$forks = 1;
@@ -152,7 +146,6 @@ $task_description .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
 $task_description .= ' -fastqPath '.$fastqPath;
 $task_description .= ' -forks '.$forks;
-$task_description .= ' -minReads '. $minReads;
 $task_description .= ' -sampleID '. $sampleID;
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
@@ -229,7 +222,7 @@ foreach my $file ( grep { /xls$/ } @samplefiles ) {
 		chomp;
 		@tmp = split("\t", $_ );
 		next if ( $tmp[1] eq "count");
-		if ( $tmp[1] >= $minReads ) {
+		if ( $tmp[1] >= $options->{'min_UMIs'} ) {
 			$reads = $tmp[1];
 			@tmp = split("_", $tmp[0] );
 			$OK->{$tmp[3]} += $reads;
@@ -817,7 +810,7 @@ sub get_matching_ids {
 		@IDS = ();    ## no match needed...
 	}
 	else {
-		die "I assume I should never get here?\n";
+		die "I assume I should never get here!?\n";
 	}
 	$self->{'last_IDS'} = \@IDS;
 	return @IDS;

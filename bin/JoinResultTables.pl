@@ -121,7 +121,21 @@ close ( LOG );
 $outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/);
 
 my $result_table = stefans_libs::result_table ->new( { 'filename' => $outfile } );
+
+## There might be the possibility, that these paths do not contain the info we need.
+## As this is not supported by the object I need to check the paths here.
+
+for ( my $i = $#paths; $i >= 0; $i-- ) {
+	unless ( -f "$paths[$i]/matrix.mtx" ) {
+		warn "path $paths[$i] does not contain the required matrix.mtx file - skipped\n";
+		splice(@paths,$i,1);
+	}
+}
 $result_table->import_tables(@paths);
+
+if ( $result_table->{'data_storage_spliced'}){
+	print "Data is stored in with splice information";
+}
 
 $result_table->write_table( $outfile );
 

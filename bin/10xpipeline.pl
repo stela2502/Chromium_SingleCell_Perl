@@ -38,7 +38,14 @@
                   the intermediate files (default '$SNIC_TMP')
                   
        -sname    :the sample name analyzed here
-                  
+       
+       -options  :all options have to be given as key<space>value combinations
+                  like -options A lsens2017-3-2 t 02:00:00 p dell
+           A     :the slurm sbatch A option
+           t     :the slurm time option
+           p     :the slurm partition option
+        min_UMIs :the QuantifyBamFiles min_UMIs option to identify samples (default 100)
+              
        -help           :print this help
        -debug          :verbose output
    
@@ -93,12 +100,45 @@ my $error = '';
 
 unless ( defined $R1[0] ) {
 	$error .= "the cmd line switch -R1 is undefined!\n";
+}elsif ( $R1[0] =~m/.txt$/ ){
+	open ( IN, "<$R1[0]") or die $!;
+	my @tmp;
+	while ( <IN> ) {
+		chomp;
+		if ( -f $_ ) {
+			push( @tmp, $_);
+		}
+	}
+	close ( IN );
+	@R1 = @tmp;
 }
 unless ( defined $R2[0] ) {
 	$error .= "the cmd line switch -R2 is undefined!\n";
+}elsif ( $R2[0] =~m/.txt$/ ){
+	open ( IN, "<$R2[0]") or die $!;
+	my @tmp;
+	while ( <IN> ) {
+		chomp;
+		if ( -f $_ ) {
+			push( @tmp, $_);
+		}
+	}
+	close ( IN );
+	@R2 = @tmp;
 }
 unless ( defined $I1[0] ) {
 	$error .= "the cmd line switch -I1 is undefined!\n";
+}elsif ( $I1[0] =~m/.txt$/ ){
+	open ( IN, "<$I1[0]") or die $!;
+	my @tmp;
+	while ( <IN> ) {
+		chomp;
+		if ( -f $_ ) {
+			push( @tmp, $_);
+		}
+	}
+	close ( IN );
+	@I1 = @tmp;
 }
 unless ( defined $gtf ) {
 	$error .= "the cmd line switch -gtf is undefined!\n";
@@ -168,12 +208,15 @@ for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options->{ $options[$i] } = $options[ $i + 1 ];
 }
 ###### default options ########
-#$options->{'something'} ||= 'default value';
+$options->{'min_UMIs'} ||= 100;
 ##############################
 mkdir($outpath) unless ( -d $outpath );
 open( LOG, ">$outpath/" . $$ . "_10xpipeline.pl.log" ) or die $!;
 print LOG $task_description . "\n";
 close(LOG);
+my $outpath_orig = $outpath;
+$outpath .= "/10xpipeline_run_files";
+mkdir($outpath) unless ( -d $outpath );
 
 my $fm = root->filemap( "$outpath/" . $$ . "_10xpipeline.pl.log");
 $outpath = $fm->{'path'};
@@ -202,6 +245,17 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 print  "\n";
 #hisat2_run_aurora.pl # reimplementation
 
+## sometimes this does not finish - lets check that agin:
+while (scalar(@$SLURM_ids) > 0 ) {
+	print "Better check once more:\n";
+	( $SLURM_ids, $sumFastqs ) = &SplitToCell( $SLURM );
+	while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
+		print ".";
+		sleep(30); # 30 sec waiting time (to show live)
+	}
+	print  "\n";
+}
+
 
 
 #hisat2_run_aurora.pl 
@@ -213,9 +267,9 @@ $hisat2 .=
 " -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
 $hisat2 .= " -fast_tmp '$fast_tmp'";
 
-
-
 print "we start the hist2 mapping process:\n".$hisat2."\n";
+
+#die "First make sure we got all files!\n";
 
 unless ( $debug) {
 	open( RUN, $hisat2 . " | " );
@@ -228,6 +282,7 @@ unless ( $debug) {
 	close(RUN);
 }
 
+#die "Please check, that all ".scalar(@$sumFastqs)." mapping scripts are processed\n".join("\n",@$sumFastqs)."\n";
 print "waiting for the batch jobs to finish\n";
 
 while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
@@ -235,6 +290,16 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 	sleep(30); # 30 sec waiting time (to show live)
 }
 print  "\n";
+
+open ( IN, "ls $outpath/HISAT2_mapped/*.bam | wc -l |" ) or die "could not run 'ls $outpath/HISAT2_mapped/*.bam | wc -l'\n";
+my @OK= map { chomp; $_} <IN>;
+close ( IN );
+
+unless ( $OK[0] == scalar(@$sumFastqs)){
+	Carp::confess ( "The HISAT2 scripts did not produce the expected output\n"
+	."I only got $OK[0] outfiles and expected ". scalar(@$sumFastqs)." mapped bam files\n"
+	);
+}
 
 ## now reshuffle the bam files
 
@@ -253,7 +318,14 @@ $cmd .= " -tmp_path '$fast_tmp'\n";
 
 print "Starting reshuffling the bam files to chromosome order\n";
 
-@$SLURM_ids = ($SLURM->run( $cmd, "$outpath/reshuffled/chr1_". $sname. ".sorted.bam") );
+unless ( -d "$outpath/reshuffled/") {
+	mkdir ( "$outpath/reshuffled/"  )
+}
+
+print "$cmd\n";
+unless ( -f "$outpath/reshuffled/chr1_". $sname. ".sorted.bam" ){
+	@$SLURM_ids = ($SLURM->run( $cmd, "$outpath/reshuffled/". $sname. "_reshuffle.sorted.bam") );
+}
 
 print "waiting for the batch job to finish\n";
 
@@ -269,10 +341,10 @@ print  "\n";
 # This takes so much memory I need to run it on the frontend ;-(
 
 opendir ( DIR, "$outpath/reshuffled/" ) or die "I could not read from the directory '$outpath/reshuffled/'\n";
-my @chrBams = grep { !/^\./ }  grep { /$sname.sorted.bam/ } readdir(DIR) ;
+my @chrBams = map{  "$outpath/reshuffled/$_" } grep { !/^\./ }  grep { /$sname.sorted.bam/ } readdir(DIR) ;
 closedir( DIR );
 my $paths;
-print "Strinting to quantify the bam files\n";
+print "Starting to quantify the bam files\n";
 ($SLURM_ids, $paths ) = QuantifyBamFile($SLURM, @chrBams);
 
 print "waiting for the batch jobs to finish\n";
@@ -285,8 +357,8 @@ print  "\n";
 
 
 $cmd = "JoinResultTables.pl";
-$cmd .= " -paths '".join("' '", @$paths );
-$cmd .= " -outfile $outpath/$sname";
+$cmd .= " -outfile $outpath_orig/$sname";
+$cmd .= " -paths '".join("' '", @$paths )."'";
 $cmd .= " -createTable";
 
 if ($debug) {
@@ -294,7 +366,12 @@ if ($debug) {
 }
 else {
 	print $cmd."\n";
-	system($cmd ) unless ( -f "$outpath/$sname.sqlite" );
+	unless ( -f "$outpath/$sname.sqlite" ){
+		system($cmd )
+	}else {
+		warn ("The sqlite databse exists - please remove if I should re-create it\n"
+		."rm -f $outpath/$sname.sqlite\n");
+	}
 }
 
 sub QuantifyBamFile {
@@ -304,7 +381,7 @@ sub QuantifyBamFile {
 	
 	foreach my $bam_file ( @chrBams ) {
 		my $fm = root->filemap( $bam_file );
-		my $opath = "$fast_tmp/$sname.$cmd->{'filename_base'}";
+		my $opath = "$fast_tmp/$sname"."_$fm->{'filename_base'}";
 		if ( -d  $opath) {
 			system( 'rm -RF '.$opath );
 		}
@@ -314,13 +391,15 @@ sub QuantifyBamFile {
 		$cmd .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
 		$cmd .= " -fastqPath $outpath";
-		$cmd .= " -minReads 100";
-		$cmd .= " -sampleID $sname.$cmd->{'filename_base'}";
+		$cmd .= " -sampleID $sname.$fm->{'filename_base'}";
+		$cmd .= " -gtf_file $gtf";
 		
-		$cmd .= "\ncp -R $opath $outpath/$sname.$cmd->{'filename_base'}";
+		$cmd .= "\ncp -R $opath $outpath/$sname.$fm->{'filename_base'}";
 		
-		push ( @paths, "$outpath/$sname.$cmd->{'filename_base'}" );
-		push( @ids, $SLURM->run($cmd, "$outpath/$sname.$cmd->{'filename_base'}/barcodes.tsv" ) )
+		push ( @paths, "$outpath/$sname.$fm->{'filename_base'}" );
+		unless ( -f "$outpath/$sname.$fm->{'filename_base'}/barcodes.tsv" ) {
+			push( @ids, $SLURM->run($cmd, "$outpath/$fm->{'filename_base'}"."_$sname" ) )
+		}
 		
 	}
 	return ( \@ids, \@paths );
@@ -335,19 +414,75 @@ sub wait_for_PID {
 	}
 }
 
+sub fix_path_problems {
+	my @use_as_separator = @_;
+	my $fm = root->filemap( $R1[0] );
+	my @path = split( "/", $fm->{'path'} );
+	my @path2;
+	my $problems;
+	my $seen;
+	for (my $i = 0; $i < @R1; $i ++ ){
+		my $fm = root->filemap( $R1[$i] );
+		@path2 = split( "/", $fm->{'path'} );
+		my $key;
+		if ( scalar(@use_as_separator) > 0 ) {
+			$key = join("_", @path2[@use_as_separator], $fm->{'filename'} );
+		}else {
+			$key = $fm->{'filename'};
+		}
+		if ( $seen->{$key} ) {
+		for ( my $a = 0; $a <  @path2; $a ++) {
+			unless ( $path2[$a] eq $path[$a] ) {
+				$problems->{$a}->{'orig'} = $path[$a];
+				$problems->{$a}->{$path2[$a]} ++;
+			}
+			
+		}
+		}
+		$seen->{$key} = $R1[$i];
+	}
+	$problems->{33} = { 'fix' => $seen};
+	
+	
+	my @tmp = sort {$a <=> $b} keys %$problems ;
+	my @fix = shift (@tmp);
+	my $i = 0;
+	#warn "this is not working: ".scalar(keys %$problems )."\n";
+	if ( scalar(keys %$problems ) > 1 ){
+		#print "problematic path parts:\n \$problems = ".root->print_perl_var_def( $problems ).";\n";
+		## So now I would suppose I should try to start in the beginning to separate the files.
+		$problems = &fix_path_problems( @fix );
+		while ( scalar(keys %$problems ) > 1 ) {
+			#print "problematic path parts with adding path [".join(', ',@fix)."] to the filenames:\n \$problems = ".root->print_perl_var_def( $problems ).";\n";
+			@tmp = sort {$a <=> $b} keys %$problems ;
+			push (@fix ,shift (@tmp));
+			$problems = &fix_path_problems( @fix );
+			if ($i ++  == 20 ) {
+				#warn "Path problems cound not be fixed!\n";
+				#last();
+			}
+		}
+	}
+	return $problems;
+}
+
 sub SplitToCell {
 	my ( $SLURM ) = @_;
 	
 	## now I need to start one script for every R1 R2 I1 combination
 	my (@slurmIDs, @fastqs);
 
-#SplitToCells.pl -I1 ./HVJ5GBGX2/outs/fastq_path/Tobias1/s1/CLP_S1_L001_I1_001.fastq.gz -R1 ./HVJ5GBGX2/outs/fastq_path/Tobias1/s1/CLP_S1_L001_R1_001.fastq.gz -R2
-#./HVJ5GBGX2/outs/fastq_path/Tobias1/s1/CLP_S1_L001_R2_001.fastq.gz -outpath Joined_Tina_fastq -options oname Tina_CLP_singleCells
-#gives file 'Joined_Tina_fastq/Tina_CLP_singleCells.annotated.fastq.gz'
+	# Here I need to make sure, that the path the files are in are all the same
+	
+	my $rev = &fix_path_problems ()->{33}->{'fix'};
+	my $fix = { map{ $rev->{$_} => $_ } keys %$rev};
+	#die "this should fix the path problems::\n \$problems = ".root->print_perl_var_def( $fix ).";\n";
+		
 	for (my $i = 0; $i < @R1; $i ++ ){
-		my $f = root->filemamp( $R1[$i] );
-		my $ofile = $f->{'filename'};
-		$ofile =~s/R1.*$//;
+		my $ofile = $fix ->{ $R1[$i] };
+		my $f = root->filemap( $R1[$i] );
+		
+		$ofile =~s/.R1.*$//;
 		
 		my $cmd = 'SplitToCells.pl';
 		$cmd .= " -I1 $I1[$i]";
@@ -358,11 +493,12 @@ sub SplitToCell {
 		$cmd .= "\ncp $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
 		$cmd .= "\ncp $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
 		$cmd .= "cp $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
-		
-		push( @slurmIDs, $SLURM->run( $cmd, "$outpath/$ofile.annotated.fastq.gz" ) );
+		unless ( -f  "$outpath/$ofile.annotated.fastq.gz" ){
+			push( @slurmIDs, $SLURM->run( $cmd, "$outpath/$ofile.annotated.fastq.gz" ) );
+		}
 		push( @fastqs , "$outpath/$ofile.annotated.fastq.gz" );
-
-		return ( \@slurmIDs, \@fastqs);
+		
 	}
+	return ( \@slurmIDs, \@fastqs);
 }
 

@@ -115,6 +115,7 @@ sub info {
 
 sub gene2id {
 	my ( $self, $gene_name, $id ) = @_;
+	return undef unless ( defined $gene_name );
 	$id ||= $self->{'__gene2id__'}->{$gene_name};
 	$id = scalar( keys %{ $self->{'__gene2id__'} } ) + 1
 	  unless ( defined $id );
@@ -142,6 +143,9 @@ Adds (+) the value to the table or if add==0 replaces the value in the table!
 
 sub AddDataset {
 	my ( $self, $hash, $add ) = @_;
+	unless ( defined $hash->{'Gene_ID'} and defined $hash->{'Sample_ID'} ) {
+		return $self;
+	}
 	$self->Add_unique_key( 'Gene_ID', 'Gene_ID' )
 	  unless ( $self->{'uniques'}->{'Gene_ID'} );
 	my $key = $self->{'uniques'}->{'Gene_ID'};
@@ -412,8 +416,11 @@ sub import_tables {
 						} , 0
 					) if ( $line[3] > 0);
 					$self->{'data_storage_spliced'} = 1;
+					warn "Data storeage type set to 'splced'\n";
 				}
+					
 			}
+			last;
 		}
 		while ( <IN> ) {
 			chomp();
