@@ -105,11 +105,40 @@ my $warn  = '';
 my $error = '';
 
 ## one other option: You only give me R1 data and I figure out where to put the files myself:
+
+my ($task_description);
+
+$task_description .= 'perl ' . $plugin_path . '/10xpipeline.pl';
+$task_description .= ' -R1 "' . join( '" "', @R1 ) . '"'  if ( defined $R1[0] );
+$task_description .= ' -R2 "' . join( '" "', @R2 ) . '"'  if ( defined $R2[0] );
+$task_description .= ' -I1 "' . join( '" "', @I1 ) . '"'  if ( defined $I1[0] );
+$task_description .= " -gtf '$gtf'"           if ( defined $gtf );
+$task_description .= " -coverage '$coverage'" if ( defined $coverage );
+$task_description .= " -genome '$genome'"     if ( defined $genome );
+$task_description .= " -outpath '$outpath'"   if ( defined $outpath );
+$task_description .= ' -options "' . join( '" "', @options ) . '"'
+  if ( defined $options[0] );
+  $task_description .= ' -debug' if ( $debug);
+  
+
+if ( -d $R1[0] ) {
+	## OK that is the best way to do it :-D
+	my $fm = root->filemap( $R1[0]."/test.txtx");
+	@R2 = undef;
+	@I1 = undef;
+	my $path = $fm->{'path'}; ## abs path please	
+	open ( IN , "find $path -name '*$sname*.gz' |") or die "I could not start the find subprocess\n$!\n";
+	@R1 = map { chomp; split( /\s+/, $_) } <IN>;
+	
+	close ( IN );
+}
 if ( -f $R1[0] and ! defined $R2[0] ) { ## I just assume I1 is also empty..
 	my @tmp = @R1;
 	@R2 = grep { /_R2_/ } @tmp;
 	@I1 = grep { /_I1_/ } @tmp;
 	@R1 = grep { /_R1_/ } @tmp;
+	#die "\$exp = ".root->print_perl_var_def( {'R1' => [@R1[1,2]], 'R2' => [@R2[1,2]], 'I1' => [@I1[1,2]] } ).";\n";
+	
 }
 
 unless ( defined $R1[0] ) {
@@ -154,6 +183,7 @@ unless ( defined $I1[0] ) {
 	close ( IN );
 	@I1 = @tmp;
 }
+
 unless ( defined $gtf ) {
 	$error .= "the cmd line switch -gtf is undefined!\n";
 }
@@ -204,19 +234,8 @@ sub helpString {
 
 ###
 
-my ($task_description);
 
-$task_description .= 'perl ' . $plugin_path . '/10xpipeline.pl';
-$task_description .= ' -R1 "' . join( '" "', @R1 ) . '"'  if ( defined $R1[0] );
-$task_description .= ' -R2 "' . join( '" "', @R2 ) . '"'  if ( defined $R2[0] );
-$task_description .= ' -I1 "' . join( '" "', @I1 ) . '"'  if ( defined $I1[0] );
-$task_description .= " -gtf '$gtf'"           if ( defined $gtf );
-$task_description .= " -coverage '$coverage'" if ( defined $coverage );
-$task_description .= " -genome '$genome'"     if ( defined $genome );
-$task_description .= " -outpath '$outpath'"   if ( defined $outpath );
-$task_description .= ' -options "' . join( '" "', @options ) . '"'
-  if ( defined $options[0] );
-  $task_description .= ' -debug' if ( $debug);
+
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -253,6 +272,9 @@ $SLURM->{'debug'} = 1 if ($debug);
 $end = DateTime->now();
 print "Now: ".$end->time()." Setup time: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
 $start_this= DateTime->now();
+
+#die "after setup death to test input options ".root->print_perl_var_def( {'R1' => [@R1[1,2]], 'R2' => [@R2[1,2]], 'I1' => [@I1[1,2]] } ).";\n";
+
 
 ## first we need to run the SplitToCells.pl script. this should definitely be run on a blade.
 my ( $SLURM_ids, $sumFastqs ) = &SplitToCell( $SLURM );
