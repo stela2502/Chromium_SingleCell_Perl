@@ -118,7 +118,12 @@ close ( LOG );
 
 
 ## Do whatever you want!
-$outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/);
+if ( $debug ) {
+	$outfile .= "_FAKE_DEBUG.sqlite" unless ( $outfile =~m/\_FAKE_DEBUG.sqlite$/ ); 
+}else {
+	$outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/ ); 
+
+}
 
 my $result_table = stefans_libs::result_table ->new( { 'filename' => $outfile } );
 

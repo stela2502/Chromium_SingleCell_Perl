@@ -183,7 +183,12 @@ print LOG $task_description . "\n";
 ## Do whatever you want!
 
 my $bam_file = stefans_libs::BAMfile->new();
-$outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/ ); 
+if ( $debug ) {
+	$outfile .= "_FAKE_DEBUG.sqlite" unless ( $outfile =~m/\_FAKE_DEBUG.sqlite$/ ); 
+}else {
+	$outfile .= ".sqlite" unless ( $outfile =~m/\.sqlite$/ ); 
+
+}
 my $result   = stefans_libs::result_table->new({ filename => $outfile,'data_storage_spliced' => 1  });
 
 my $start       = time;
@@ -418,19 +423,37 @@ $self->{'end'}        = 0;
 $self->{'next_start'} = 0;
 $self->{'last_IDS'}   = [];
 
-$bam_file->filter_file( $infile, \&filter );
-$self->{total_reads} = $runs;
+unless ( $debug ) { ## debugging the 10x pipeline here
+	$bam_file->filter_file( $infile, \&filter );
+	$self->{total_reads} = $runs;
 
-&measure_time_and_state("Mapping the UMIs to the transcriptome");
+	&measure_time_and_state("Mapping the UMIs to the transcriptome");
 
-print
-"In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp ("
-  . sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
-  . "%)\n";
+	print
+	"In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp ("
+  	. sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
+  	. "%)\n";
 
 ##And here is where I stop the whole process this time as all other steps can be done in R.
 
-$result->print2table();
+	$result->print2table();
+}else {
+	## as a very short cut I will just create some fake data in the outfiles
+	## but also change the outfile (done in the startup)
+	my $t=0;
+	for ( my $i = 1; $i < 100; $i ++ ){
+			$result->AddDataset (  {'Gene_ID' => "Gene000$i", 'Sample_ID' => "Sample000$i", 'value'=> $i} ,0 );
+			if ( $t ) {
+				$t = 0;
+				$result->AddDataset (  {'Gene_ID' => "Gene000$i", 'Sample_ID' => "Sample000$i spliced", 'value'=> $i} ,0 );
+			}else { 
+				$t = 1;
+			}
+	}
+	print "As we are in debug mode data was not quantified, but made up instead ;-)\n";
+	$result->print2table();
+	
+}
 print "The file '$outfile' now contains all results from bam file '$infile'\n";
 exit(1);
 

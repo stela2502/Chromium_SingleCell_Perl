@@ -65,6 +65,8 @@ use Pod::Usage;
 
 use stefans_libs::SLURM;
 
+use DateTime;
+
 use strict;
 use warnings;
 
@@ -95,11 +97,15 @@ Getopt::Long::GetOptions(
 	"-debug" => \$debug
 );
 
+my $start = DateTime->now();
+my ($end, $start_this);
+print "Started at ".$start->time() ."\n";
+
 my $warn  = '';
 my $error = '';
 
 ## one other option: You only give me R1 data and I figure out where to put the files myself:
-if ( -f $R1[0] and ! defined $R2[1] ) { ## I just assume I1 is also empty..
+if ( -f $R1[0] and ! defined $R2[0] ) { ## I just assume I1 is also empty..
 	my @tmp = @R1;
 	@R2 = grep { /_R2_/ } @tmp;
 	@I1 = grep { /_I1_/ } @tmp;
@@ -210,6 +216,7 @@ $task_description .= " -genome '$genome'"     if ( defined $genome );
 $task_description .= " -outpath '$outpath'"   if ( defined $outpath );
 $task_description .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
+  $task_description .= ' -debug' if ( $debug);
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -243,6 +250,10 @@ $SLURM->{'debug'} = 1 if ($debug);
 
 ## Do whatever you want!
 
+$end = DateTime->now();
+print "Now: ".$end->time()." Setup time: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
+$start_this= DateTime->now();
+
 ## first we need to run the SplitToCells.pl script. this should definitely be run on a blade.
 my ( $SLURM_ids, $sumFastqs ) = &SplitToCell( $SLURM );
 print "waiting for SplitToCell to finish\n";
@@ -254,6 +265,8 @@ print  "\n";
 #hisat2_run_aurora.pl # reimplementation
 
 ## sometimes this does not finish - lets check that agin:
+unless ( $debug ) {
+	# outfiles never present in debug version ..
 while (scalar(@$SLURM_ids) > 0 ) {
 	print "Better check once more:\n";
 	( $SLURM_ids, $sumFastqs ) = &SplitToCell( $SLURM );
@@ -263,9 +276,11 @@ while (scalar(@$SLURM_ids) > 0 ) {
 	}
 	print  "\n";
 }
+}
 
-
-
+$end = DateTime->now();
+print "Now: ".$end->time()." merge R1, R2 and I1 reads + polyA and low quality filter - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
+$start_this = DateTime->now();
 #hisat2_run_aurora.pl 
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
@@ -274,6 +289,7 @@ my $hisat2 =
 $hisat2 .=
 " -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
 $hisat2 .= " -fast_tmp '$fast_tmp'";
+$hisat2 .= " -debug" if ( $debug );
 
 print "we start the hist2 mapping process:\n".$hisat2."\n";
 
@@ -288,6 +304,17 @@ unless ( $debug) {
 		}
 	}
 	close(RUN);
+}else {
+	mkdir ( "$outpath/HISAT2_mapped/" ) unless ( -d "$outpath/HISAT2_mapped/" );
+	## and we would expect one outfile for all fastq files - so lets add some fake ones:
+	my $fm;
+	foreach my $f ( @$sumFastqs ) {
+		$fm = root->filemap( $f );
+		my $nfile = "$outpath/HISAT2_mapped/FAKE_DEBUG_".$fm->{'filename_base'}. ".sorted.bam" ;
+		unless ( -f $nfile ) {
+			system( "touch $nfile");
+		}
+	}
 }
 
 #die "Please check, that all ".scalar(@$sumFastqs)." mapping scripts are processed\n".join("\n",@$sumFastqs)."\n";
@@ -299,8 +326,15 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 }
 print  "\n";
 
+$end = DateTime->now();
+print "Now: ".$end->time()." HSAT2 mapping - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
+$start_this = DateTime->now();
+
 open ( IN, "ls $outpath/HISAT2_mapped/*.bam | wc -l |" ) or die "could not run 'ls $outpath/HISAT2_mapped/*.bam | wc -l'\n";
 my @OK= map { chomp; $_} <IN>;
+unless ( $debug ) {
+	@OK = grep {!/FAKE_DEBUG_/ } @OK; ## in case there are some fake files from the last debug run.
+}
 close ( IN );
 
 unless ( $OK[0] == scalar(@$sumFastqs)){
@@ -323,6 +357,7 @@ $cmd .= " -coverage $coverage";
 $cmd .= " -sampleID $sname";
 $cmd .= " -n $n";
 $cmd .= " -tmp_path '$fast_tmp'\n";
+$cmd .= " -debug" if ( $debug );
 
 print "Starting reshuffling the bam files to chromosome order\n";
 
@@ -334,6 +369,9 @@ print "$cmd\n";
 unless ( -f "$outpath/reshuffled/chr1_". $sname. ".sorted.bam" ){
 	@$SLURM_ids = ($SLURM->run( $cmd, "$outpath/reshuffled/". $sname. "_reshuffle.sorted.bam") );
 }
+if ( $debug ) {
+	system( 'bash '."$outpath/reshuffled/". $sname. "_reshuffle.sorted.sh");
+}
 
 print "waiting for the batch job to finish\n";
 
@@ -342,6 +380,10 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 	sleep(30); # 30 sec waiting time (to show live)
 }
 print  "\n";
+
+$end = DateTime->now();
+print "Now: ".$end->time()." reshuffling - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
+$start_this = DateTime->now();
 
 ## now I need to Quantify this sample
 
@@ -363,24 +405,34 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 }
 print  "\n";
 
+$end = DateTime->now();
+print "Now: ".$end->time()." quantify - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
+$start_this = DateTime->now();
 
 $cmd = "JoinResultTables.pl";
 $cmd .= " -outfile $outpath_orig/$sname";
 $cmd .= " -paths '".join("' '", @$paths )."'";
 $cmd .= " -createTable";
+$cmd .= " -debug" if ( $debug );
 
-if ($debug) {
-	print $cmd."\n";
+print "JoinResultTables is started like that:\n".$cmd."\n";
+
+unless ( -f "$outpath/$sname.sqlite" ){
+	system($cmd )
+}else {
+ warn ("The sqlite databse exists - please remove if I should re-create it\n"
+	."rm -f $outpath/$sname.sqlite\n");
 }
-else {
-	print $cmd."\n";
-	unless ( -f "$outpath/$sname.sqlite" ){
-		system($cmd )
-	}else {
-		warn ("The sqlite databse exists - please remove if I should re-create it\n"
-		."rm -f $outpath/$sname.sqlite\n");
-	}
-}
+
+
+
+warn "please delete all files in to outpath $outpath after inspection!\n" if ( $debug );
+
+print "Now: ".$end->time()." JoinResultTables - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
+
+$end = DateTime->now();
+print "10xpipeline.pl " . $end->time() . ":Finished\n";
+print "Duration: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
 
 sub QuantifyBamFile {
 	my ( $SLURM, @chrBams) = @_;
@@ -401,12 +453,17 @@ sub QuantifyBamFile {
 		$cmd .= " -fastqPath $outpath";
 		$cmd .= " -sampleID $sname.$fm->{'filename_base'}";
 		$cmd .= " -gtf_file $gtf";
+		$cmd .= " -debug" if ( $debug );
 		
 		$cmd .= "\ncp -R $opath $outpath/$sname.$fm->{'filename_base'}";
 		
 		push ( @paths, "$outpath/$sname.$fm->{'filename_base'}" );
 		unless ( -f "$outpath/$sname.$fm->{'filename_base'}/barcodes.tsv" ) {
-			push( @ids, $SLURM->run($cmd, "$outpath/$fm->{'filename_base'}"."_$sname" ) )
+			push( @ids, $SLURM->run($cmd, "$outpath/$fm->{'filename_base'}"."_$sname" ) );
+			if ( $debug ) {
+				## script not run, but it would not use a lot of resources anyhow - so bash it
+				system( "bash $outpath/$fm->{'filename_base'}"."_$sname.sh");
+			}
 		}
 		
 	}

@@ -159,18 +159,27 @@ foreach my $file (@bams) {
 	my $fm = root->filemap($file);
 	my ( $cmd, $ofile );
 	unless ( -f "$file.bai" ) {
-		system("samtools index $file");
+		system("samtools index $file") unless ( $debug );
 	}
 	my $in;
 	foreach my $chr (@chrs) {
+		unless ( $debug ) {
 		$ofile = File::Spec->catfile( $tmp_path,
 			$chr . "_OP_" . $fm->{'filename'} . ".bam" );
+		}else {
+			$ofile = File::Spec->catfile( $tmp_path,'FAKE_DEBUG_'.
+			$chr . "_OP_" . $fm->{'filename'} . ".bam" );
+		}
 		if ( !-f $ofile ) {
 			$cmd = "samtools view -b $file $chr > $ofile";
 			print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
 			push( @ofiles, $ofile );
 			## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
-			system($cmd ) if ( !$debug );
+			unless ( $debug ){
+				system($cmd );
+			}else {
+				system( "touch $ofile");
+			}
 		}
 	}
 
@@ -189,8 +198,9 @@ foreach my $chr (@chrs) {
 	  . File::Spec->catfile( $outpath, $chr ."_". $sampleID. ".sorted.bam" )
 	  . " $ifiles";
 	print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
-
-	system($cmd ) if ( !$debug );
+	if ( !$debug ){
+		system($cmd ) 
+	}
 	$pm->finish; 
 }
 
@@ -202,5 +212,5 @@ foreach my $file (@ofiles) {
 }
 my $end = DateTime->now();
 print "(" . $end->time() . "):Finished\n";
-print "Duration: " . $end->subtract_datetime($start) . "\n";
+print "Duration: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
 
