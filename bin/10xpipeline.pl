@@ -288,7 +288,7 @@ my $hisat2 =
 "hisat2_run_aurora.pl -files '".join("' '", @$sumFastqs)."' -outpath $outpath/HISAT2_mapped/ -options n 5 partitition $options->{'p'} A ".$options->{'A'};
 $hisat2 .=
 " -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
-$hisat2 .= " -fast_tmp '$fast_tmp'";
+$hisat2 .= " -fast_tmp '$fast_tmp' -justMapping";
 $hisat2 .= " -debug" if ( $debug );
 
 print "we start the hist2 mapping process:\n".$hisat2."\n";
@@ -326,6 +326,8 @@ while ( ! $SLURM->pids_finished( @$SLURM_ids ) ){
 }
 print  "\n";
 
+
+
 $end = DateTime->now();
 print "Now: ".$end->time()." HSAT2 mapping - processing time: " .  join(":",$end->subtract_datetime($start_this)->in_units('days', 'hours', 'seconds'))  . "\n";
 $start_this = DateTime->now();
@@ -341,6 +343,8 @@ unless ( $OK[0] == scalar(@$sumFastqs)){
 	Carp::confess ( "The HISAT2 scripts did not produce the expected output\n"
 	."I only got $OK[0] outfiles and expected ". scalar(@$sumFastqs)." mapped bam files\n"
 	);
+}else {
+	print "HISAT2 did produce the required $OK[0] outfiles\n";
 }
 
 ## now reshuffle the bam files
