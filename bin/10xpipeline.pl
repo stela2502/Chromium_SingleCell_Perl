@@ -98,6 +98,14 @@ Getopt::Long::GetOptions(
 my $warn  = '';
 my $error = '';
 
+## one other option: You only give me R1 data and I figure out where to put the files myself:
+if ( -f $R1[0] and ! defined $R2[1] ) { ## I just assume I1 is also empty..
+	my @tmp = @R1;
+	@R2 = grep { /_R2_/ } @tmp;
+	@I1 = grep { /_I1_/ } @tmp;
+	@R1 = grep { /_R1_/ } @tmp;
+}
+
 unless ( defined $R1[0] ) {
 	$error .= "the cmd line switch -R1 is undefined!\n";
 }elsif ( $R1[0] =~m/.txt$/ ){
