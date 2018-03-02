@@ -29,6 +29,7 @@
        -outfile     :the sqlite database filename
        -createTable :option to create not only the databse, but also the summary tables
 
+       -force       :force removal of 'old' database files
 
        -help           :print this help
        -debug          :verbose output
@@ -55,12 +56,13 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 
-my ( $help, $debug, $database, @paths, $outfile, $createTable);
+my ( $help, $debug, $database, @paths, $force, $outfile, $createTable);
 
 Getopt::Long::GetOptions(
        "-paths=s{,}"    => \@paths,
 	 "-outfile=s"    => \$outfile,
        "-createTable"    => \$createTable,
+       "-force" => \$force,
 
 	 "-help"             => \$help,
 	 "-debug"            => \$debug
@@ -103,8 +105,7 @@ $task_description .= 'perl '.$plugin_path .'/JoinResultTables.pl';
 $task_description .= ' -paths "'.join( '" "', @paths ).'"' if ( defined $paths[0]);
 $task_description .= " -outfile '$outfile'" if (defined $outfile);
 $task_description .= " -createTable " if ( $createTable);
-
-
+$task_description .= " -force " if ( $force );
 
 use stefans_libs::Version;
 my $V = stefans_libs::Version->new();
@@ -125,6 +126,13 @@ if ( $debug ) {
 
 }
 
+if ( -f $outfile ) {
+	if ( $force ) {
+		unlink( $outfile )
+	}else {
+		die "The outfile '$outfile' is present\n"."I will not recreate it unless -force(ed) ;-)\nBye\n";
+	}
+}
 my $result_table = stefans_libs::result_table ->new( { 'filename' => $outfile } );
 
 ## There might be the possibility, that these paths do not contain the info we need.

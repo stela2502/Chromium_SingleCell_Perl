@@ -232,7 +232,7 @@ sub filter_reads {
 		return undef;
 	}
 
-	if ( ++ $flush_counter %% 10000 == 0 ) {
+	if ( ++ $flush_counter % 10000 == 0 ) {
 		print '.';
 	} 
 	## return filtered read

@@ -16,6 +16,9 @@ $outpath = "$plugin_path/data/output/10xpipeline";
 if ( -d $outpath ) {
 	#system("rm -Rf $outpath/*");
 }
+if ( -f "$outpath/sampleX.sqlite") {
+	unlink( "$outpath/sampleX.sqlite" ) ## would otherwise create an error...
+}
 
 $R1 = "$plugin_path/data/10xpipeline/R1.txt";
 $R2 = "$plugin_path/data/10xpipeline/R2.txt";
@@ -50,10 +53,9 @@ my $cmd =
 . " -fast_tmp ". "$plugin_path/data/output/10xpipeline/fast_tmp"
 . " -outpath " . $outpath 
 . " -sname sampleX"
+. " -local" ## I do not wnat to stress the SLURM env - and I do not wnt to detect errors in the thing!
 #. " -debug"
 ;
-
-
 
 my $start = time;
 system( $cmd );
