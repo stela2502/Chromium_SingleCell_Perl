@@ -17,6 +17,8 @@ if ( -d $outpath ) {
 	system("rm -Rf $outpath/*");
 }
 
+chdir( $outpath );
+
 $R1 = "$plugin_path/data/10xpipeline/R1.txt";
 $R2 = "$plugin_path/data/10xpipeline/R2.txt";
 $I1 = "$plugin_path/data/10xpipeline/I1.txt";
