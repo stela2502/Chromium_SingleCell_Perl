@@ -163,22 +163,27 @@ foreach my $file (@bams) {
 	}
 	my $in;
 	foreach my $chr (@chrs) {
-		unless ( $debug ) {
-		$ofile = File::Spec->catfile( $tmp_path,
-			$chr . "_OP_" . $fm->{'filename'} . ".bam" );
-		}else {
-			$ofile = File::Spec->catfile( $tmp_path,'FAKE_DEBUG_'.
-			$chr . "_OP_" . $fm->{'filename'} . ".bam" );
+		unless ( $chr =~ m/^chr/ ) {
+			$chr = "chr$chr"; ## we use --add-chrname in the hisat2 call
 		}
-		if ( !-f $ofile ) {
-			$cmd = "samtools view -b $file $chr > $ofile";
-			print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
-			push( @ofiles, $ofile );
-			## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
-			unless ( $debug ){
-				system($cmd );
+		unless ( -f $outpath. $chr ."_". $sampleID. ".sorted.bam"  ){ ## the final outfile exists
+			unless ( $debug ) {
+			$ofile = File::Spec->catfile( $tmp_path,
+				$chr . "_OP_" . $fm->{'filename'} . ".bam" );
 			}else {
-				system( "touch $ofile");
+				$ofile = File::Spec->catfile( $tmp_path,'FAKE_DEBUG_'.
+				$chr . "_OP_" . $fm->{'filename'} . ".bam" );
+			}
+			if ( ! -f $ofile ) { ## this outfile exists NOT
+				$cmd = "samtools view -b $file $chr > $ofile";
+				print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
+				push( @ofiles, $ofile );
+				## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
+				unless ( $debug ){
+					system($cmd );
+				}else {
+					system( "touch $ofile");
+				}
 			}
 		}
 	}
@@ -188,15 +193,25 @@ foreach my $file (@bams) {
 
 $pm->wait_all_children;
 
+
 MERGES:
 foreach my $chr (@chrs) {
 	my $pid = $pm->start and next MERGES;
+	unless ( $chr =~ m/^chr/ ) {
+		$chr = "chr$chr"; ## we use --add-chrname in the hisat2 call
+	}
+	next if ( -f $outpath. $chr ."_". $sampleID. ".sorted.bam"  ); ## the final outfile exists
+	
 	my ( $cmd, $ofile, $ifiles );
 	$ifiles = File::Spec->catfile( $tmp_path, $chr . "_OP_*.bam" );
+	$ofile = File::Spec->catfile( $outpath, $chr ."_". $sampleID. ".sorted.bam" );
 	$cmd =
 	    "samtools merge "
-	  . File::Spec->catfile( $outpath, $chr ."_". $sampleID. ".sorted.bam" )
-	  . " $ifiles";
+	  . $ofile
+	  . " $ifiles\n";
+	$cmd .= "if  [ -f $ofile ] \&\&[ -s $ofile ]; ";
+	$cmd .= "then". "\nrm -f $ifiles \nfi\n";
+	  
 	print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
 	if ( !$debug ){
 		system($cmd ) 
@@ -212,5 +227,6 @@ foreach my $file (@ofiles) {
 }
 my $end = DateTime->now();
 print "(" . $end->time() . "):Finished\n";
+
 print "Duration: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
 

@@ -613,10 +613,11 @@ sub prepare_data_table {
 
 	my ( $gene_id );
 
-	my ( $hash, $data_id, $sname );
+	my ( $hash, $data_id, $sname, $key, $prog );
 	## get last ID
 	$data_id = $self->{'__lastDataID__'};
-
+	$prog = 0;
+	local $| = 1; ## local progress bar
 	if ( $self->{'data_storage_spliced'} ) {
 		$data->Add_2_Header(
 			[ 'id', 'sample_id', 'gene_id', 'value', 'spliced' ] );
@@ -626,7 +627,9 @@ sub prepare_data_table {
 
 			#print "one line = \$exp = ".root->print_perl_var_def($hash ).";\n";
 			$gene_id = $self->gene2id( $hash->{'Gene_ID'} );
-
+			if ( $prog++ % 100 == 0) {
+				print "-$prog-";
+			}
 			map {
 				if ( defined $hash->{$_} )
 				{    ## simple only the sample id no splicing
@@ -639,7 +642,9 @@ sub prepare_data_table {
 								0
 							]    ## default spliced to 0
 						) if ( defined $hash->{$_} );
-						$data->UpdateUniqueKey('data_sg');
+						$key = [ $self->sample2id($_), $gene_id];
+						$key = "@$key";
+						$data->{'uniques'}->{'data_sg'}->{$key} = $data->Lines()-1;
 					}
 					else {
 						## find the right ID!
@@ -676,7 +681,9 @@ sub prepare_data_table {
 							0
 						]    ## default spliced to 0
 					) if ( defined $hash->{$_} );
-					$data->UpdateUniqueKey('data_sg');
+					$key = [ $self->sample2id($_), $gene_id];
+					$key = "@$key";
+					$data->{'uniques'}->{'data_sg'}->{$key} = $data->Lines()-1;
 				}
 			} grep { !/Gene_ID/ } @{ $self->{'header'} };
 			last if ( ( --$lines ) == 0 );
@@ -685,6 +692,8 @@ sub prepare_data_table {
 	if ( $data->Lines() > 0 ) {
 		$self->{'__lastDataID__'} = $data_id;
 	}
+	$| = 0; ## local progress bar off.
+	
 	$self->{'uniques'}->{'Gene_ID'} =
 	  undef; 
 	return $data;

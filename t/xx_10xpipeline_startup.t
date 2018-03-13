@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 164;
+use Test::More tests => 165;
 use stefans_libs::flexible_data_structures::data_table;
 
 use FindBin;
@@ -93,7 +93,9 @@ foreach  ( @scripts1 ) {
 }
 
 ## HISAT scripts:
-my @hisat_scripts = qw( HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh
+my @hisat_scripts = qw( 
+hisat2_run.sh
+HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh
 HJ2GYBGX5_Ctrl-LSK_S5_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L002.annotated.fastq.sh
 HJ2GYBGX5_Ctrl-LSK_S5_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L003.annotated.fastq.sh
 HJ2GYBGX5_Ctrl-LSK_S5_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L004.annotated.fastq.sh
@@ -139,13 +141,13 @@ foreach  ( @hisat_fake_output ) {
 
 ## reshuffle output
 
-$_ = 'reshuffled/sampleX_reshuffle.sorted.sh';
+$_ = 'reshuffled/sampleX_reshuffle_script_run.sh';
 
 ok ( -f "$run_folder/$_", "script file '$_'");
 ok (scalar( grep( /SBATCH \-w/, &fcontent("$run_folder/$_")) ) == 1, "script $_ contains -w SLURM option" );
 
 my @reshuffle = qw(chr2_sampleX.sorted.bam  chrX_sampleX.sorted.bam
-chr1_sampleX.sorted.bam         chr3_sampleX.sorted.bam  sampleX_reshuffle.sorted.sh
+chr1_sampleX.sorted.bam         chr3_sampleX.sorted.bam
  );
 
 foreach  ( @reshuffle ) {
@@ -164,10 +166,11 @@ foreach  ( @QuantD ) {
 	ok ( -d "$run_folder/$_", "Quantify output folders '$_'")
 }
 
-my @QuantF = qw(chrX_sampleX_sampleX.sh
-chr2_sampleX_sampleX.sh
-chr1_sampleX_sampleX.sh
-chr3_sampleX_sampleX.sh
+my @QuantF = qw(
+QuantifyBamFile_chr2_sampleX.sorted.sh
+QuantifyBamFile_chr1_sampleX.sorted.sh
+QuantifyBamFile_chr3_sampleX.sorted.sh
+QuantifyBamFile_chrX_sampleX.sorted.sh
 sampleX.chrX_sampleX/genes.tsv
 sampleX.chrX_sampleX/barcodes.tsv
 sampleX.chrX_sampleX/matrix.mtx

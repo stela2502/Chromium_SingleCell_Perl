@@ -68,6 +68,7 @@ use Pod::Usage;
 
 use stefans_libs::SLURM;
 use Parallel::ForkManager;
+use stefans_libs::file_readers::gtf_file;
 
 use DateTime;
 
@@ -124,6 +125,7 @@ $task_description .= " -genome '$genome'"     if ( defined $genome );
 $task_description .= " -outpath '$outpath'"   if ( defined $outpath );
 $task_description .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
+$task_description .= " -sname $sname"; 
 $task_description .= ' -debug' if ($debug);
 $task_description .= ' -local' if ($local);
 
@@ -218,7 +220,7 @@ unless ($fast_tmp) {
 	$fast_tmp = '$SNIC_TMP';
 }
 unless ($sname) {
-	$warn .= "The sname was set to 'sampleX'\n";
+	$error .= "The sname was set to 'sampleX'\n";
 	$sname = 'sampleX';
 }
 
@@ -264,7 +266,7 @@ my $fm = root->filemap( "$outpath/" . $$ . "_10xpipeline.pl.log" );
 $outpath = $fm->{'path'};
 
 ## turn on autoflush for the process bar:
-$| = 1;
+#$| = 1;
 
 ## default slurm options
 $options->{'A'} ||= 'lsens2017-3-2';
@@ -306,23 +308,6 @@ unless ($local) {
 	}
 	print "\n";
 
-	#hisat2_run_aurora.pl # reimplementation
-
-## sometimes this does not finish - lets check that agin:
-	unless ($debug) {
-
-		# outfiles never present in debug version ..
-		while ( scalar(@$SLURM_ids) > 0 ) {
-			print "Better check once more:\n";
-			( $SLURM_ids, $sumFastqs ) = &SplitToCell($SLURM);
-			while ( !$SLURM->pids_finished(@$SLURM_ids) ) {
-				print ".";
-				sleep(30);    # 30 sec waiting time (to show live)
-			}
-			print "\n";
-		}
-	}
-
 }
 else {
 	( $SLURM_ids, $sumFastqs ) = &SplitToCell_local($SLURM);
@@ -340,7 +325,7 @@ my $hisat2 =
   . "' -outpath $outpath/HISAT2_mapped/"
   . " -options n 5 partitition $options->{'p'} A "
   . $options->{'A'};
-my $used = { map { $_ => 1 } qw( n A p N) };
+my $used = { map { $_ => 1 } qw( n A p N ) };
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
 	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );
 }
@@ -358,7 +343,10 @@ $SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
 ## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/hisat2_run<PID>.err and $outpath/hisat2_run<PID>.out file
 
 ## Identify the run ids we need to wait for:
-my @tmp = get_files_from_path ( $outpath, "hisat2_run.*out\$");
+my @tmp = get_files_from_path( $outpath_orig, "hisat2_run.local.*out\$" );
+unless ( -f $tmp[0] ) {
+	Carp::confess("I did not get a usable hisat out file: '$tmp[0]'\n");
+}
 open( RUN, $tmp[0] )
   or die "I could not oopen the hisat2_runaurora stdout file '$tmp[0]'\n$!\n";
 
@@ -369,7 +357,6 @@ foreach (<RUN>) {
 	}
 }
 close(RUN);
-
 
 if ($debug) {
 	mkdir("$outpath/HISAT2_mapped/") unless ( -d "$outpath/HISAT2_mapped/" );
@@ -387,20 +374,23 @@ if ($debug) {
 	}
 }
 
+print "We got the HISAT2 slurm IDs: " . join( " ", @$SLURM_ids ) . "\n";
+
 $start_this = &check_time_since( $start_this, 'HISAT2 mapping', $SLURM_ids );
 
 ## check the hisat2 results
-my @OK = get_files_from_path ( "$outpath/HISAT2_mapped/", ".bam\$");
-
+my @OK = get_files_from_path( "$outpath/HISAT2_mapped/", ".bam\$" );
 
 unless ( scalar(@OK) == scalar(@$sumFastqs) ) {
 	Carp::confess( "The HISAT2 scripts did not produce the expected output\n"
-		  . "I only got ".scalar(@OK)." outfiles and expected "
+		  . "I only got "
+		  . scalar(@OK)
+		  . " outfiles and expected "
 		  . scalar(@$sumFastqs)
 		  . " mapped bam files\n" );
 }
 else {
-	print "HISAT2 did produce the required ".scalar(@OK)." outfiles\n";
+	print "HISAT2 did produce the required " . scalar(@OK) . " outfiles\n";
 }
 
 ## now reshuffle the bam files
@@ -435,9 +425,10 @@ print "$cmd\n";
   )
   ; ## the other one will not run due to the 'debug' setting, but I created fake data and want to test this here
 if ($debug) {
+
 	$SLURM_local->run(
 		$cmd,
-		"$outpath/reshuffled/script_run",
+		"$outpath/reshuffled/$sname" . "_reshuffle_script_run",
 		"$outpath/reshuffled/chr1_" . $sname . ".sorted.bam"
 	);
 }
@@ -451,13 +442,15 @@ $start_this =
 #QuantifyBamFile.pl -infile ./HVJ5GBGX2/outs/fastq_path/Tobias1/s1/CLP_S1_L001_R2_001.fastq.gz -outfile perl_requant/CLP_S1_L001_R2 -gtf_file ~/lunarc/genomes/mouse/mm10/gencode.vM14.chr_patch_hapl_scaff.annotation.gtf
 # This takes so much memory I need to run it on the frontend ;-(
 
-my @chrBams = get_files_from_path ( "$outpath/reshuffled/", "$sname.sorted.bam");
+my @chrBams =
+  &get_files_from_path( "$outpath/reshuffled/", "$sname.sorted.bam\$" );
 
 my $paths;
 print "Starting to quantify the bam files\n";
 if ( $local or $debug ) {
 	( $SLURM_ids, $paths ) = QuantifyBamFile_local( $SLURM, @chrBams );
-}else {
+}
+else {
 	( $SLURM_ids, $paths ) = QuantifyBamFile( $SLURM, @chrBams );
 }
 
@@ -477,7 +470,8 @@ if ( -f "$outpath/$sname.sqlite" ) {
 		  . "rm -f $outpath/$sname.sqlite\n" );
 }
 
-$SLURM_local->run( $cmd, "$outpath/JoinResultTables", "$outpath/$sname.sqlite" );
+$SLURM_local->run( $cmd, "$outpath/JoinResultTables_$sname",
+	"$outpath/$sname.sqlite" );
 
 warn "please delete all files in to outpath $outpath after inspection!\n"
   if ($debug);
@@ -491,20 +485,22 @@ print "n10xpipeline.pl total run time: "
 	$end->subtract_datetime($start)->in_units( 'days', 'hours', 'seconds' ) )
   . "\n";
 
-
 sub get_files_from_path {
 	my ( $path, @matches ) = @_;
 	opendir( DIR, $path )
-  		or die "I could not read from the directory '$path'\n$!\n";
-	my @chrBams = grep { !/^\./ } readdir(DIR);
+	  or die "I could not read from the directory '$path'\n$!\n";
+	my @dat = grep { !/^\./ } readdir(DIR);
 	closedir(DIR);
-	foreach ( @matches) {
-		@chrBams =	grep { /$_/ } @chrBams;
-	}
-	@chrBams =	map { "$path/$_" } @chrBams;
-	return @chrBams;
-}
+	foreach my $select (@matches) {
 
+		#print "I select all files matching '$select'\n";
+		@dat = grep { /$select/ } @dat;
+
+		#print "Still in the game:".join("\n",@dat)."\n\n";
+	}
+	@dat = map { "$path/$_" } @dat;
+	return @dat;
+}
 
 =head3 check_time_since ( $start_last, $msg )
 
@@ -531,9 +527,9 @@ sub check_time_since {
 	}
 
 	$end = DateTime->now();
-	my $str = "Now: "
+	my $str = "# "
 	  . $end->time()
-	  . " $msg - processing time: "
+	  . " - $msg - processing time: "
 	  . join( ":",
 		$end->subtract_datetime($start)->in_units( 'days', 'hours', 'seconds' )
 	  ) . "\n";
@@ -550,6 +546,7 @@ sub QuantifyBamFile_CMD {
 		system( 'rm -RF ' . $opath );
 	}
 	my $cmd = "QuantifyBamFile.pl";
+	
 	$cmd .= " -infile $bam_file";
 	$cmd .= " -outfile $opath.sqlite";
 	$cmd .= ' -options ' . $slurmOptions
@@ -557,11 +554,20 @@ sub QuantifyBamFile_CMD {
 	$cmd .= " -fastqPath $outpath";
 	$cmd .= " -sampleID $sname.$fm->{'filename_base'}";
 	$cmd .= " -gtf_file $gtf";
+	
+	if ( $fm->{'filename_base'} =~ m/(.*)_$sname/ ) {
+		$cmd .= " -drop_chr ".stefans_libs::file_readers::gtf_file->_checkChr( $1 );
+	}
 	$cmd .= " -debug" if ($debug);
 
-	$cmd .= "\ncp -R $opath $outpath/$sname.$fm->{'filename_base'}";
+	$cmd .= "\nmv $opath $outpath/$sname.$fm->{'filename_base'}";
+	$cmd .= "\nmv $fast_tmp/$sname.$fm->{'filename_base'}* $outpath/$sname.$fm->{'filename_base'}/"; #copy the log file, too.
 
 	return $cmd;
+}
+
+sub byFileSize {
+	-s $b <=> -s $a;
 }
 
 sub QuantifyBamFile_local {
@@ -569,19 +575,24 @@ sub QuantifyBamFile_local {
 	my ( @ids, @paths );
 	$SLURM->{'options'}->add( 'n', 1 );
 
-	foreach my $bam_file (@chrBams) {
+	print "using this comuter to calculate - this can take a lot of time!\n";
+	FILES:
+	foreach my $bam_file ( sort byFileSize @chrBams) {
+		my $pid   = $pm->start and next FILES;
+		
 		my $fm = root->filemap($bam_file);
 
 		my $cmd = QuantifyBamFile_CMD($bam_file);
 		push( @paths, "$outpath/$sname.$fm->{'filename_base'}" );
-
+		print "Quantify cmd:".$cmd."\n";
 		$SLURM_local->run(
 			$cmd,
-			"$outpath/$fm->{'filename_base'}" . "_$sname",
+			"$outpath/QuantifyBamFile_$fm->{'filename'}" . "_$sname",
 			"$outpath/$sname.$fm->{'filename_base'}/barcodes.tsv"
-		  )
-
+		  );
+		 $pm->finish;
 	}
+	$pm->wait_all_children;	
 	return ( \@ids, \@paths );
 }
 
@@ -590,7 +601,8 @@ sub QuantifyBamFile {
 	my ( @ids, @paths );
 	$SLURM->{'options'}->add( 'n', 1 );
 
-	foreach my $bam_file (@chrBams) {
+	foreach my $bam_file (sort byFileSize @chrBams) {
+		
 		my $fm = root->filemap($bam_file);
 
 		my $cmd = QuantifyBamFile_CMD($bam_file);
@@ -600,12 +612,15 @@ sub QuantifyBamFile {
 			@ids,
 			$SLURM->run(
 				$cmd,
-				"$outpath/$fm->{'filename_base'}" . "_$sname",
+				"$outpath/QuantifyBamFile_$fm->{'filename'}" . "_$sname",
 				"$outpath/$sname.$fm->{'filename_base'}/barcodes.tsv"
 			)
 		);
 
+		
 	}
+	
+	
 	return ( \@ids, \@paths );
 }
 
@@ -637,6 +652,10 @@ sub fix_path_problems {
 		}
 		if ( $seen->{$key} ) {
 			for ( my $a = 0 ; $a < @path2 ; $a++ ) {
+				next
+				  unless ( defined $path2[$a] )
+				  ;    # the first one is alwas undefined...
+				 #warn "Which one is undefined? 2 ($a)? '$path2[$a]' or 1? '$path[$a]'?\n";
 				unless ( $path2[$a] eq $path[$a] ) {
 					$problems->{$a}->{'orig'} = $path[$a];
 					$problems->{$a}->{ $path2[$a] }++;
@@ -682,9 +701,9 @@ sub SpitCell_CMD {
 	$cmd .= " -R2 $R2";
 	$cmd .= " -outpath $fast_tmp";
 	$cmd .= " -options oname $ofile" . $slurmOptions;
-	$cmd .= "\ncp $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
-	$cmd .= "\ncp $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
-	$cmd .= "cp $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
+	$cmd .= "\nmv $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
+	$cmd .= "\nmv $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
+	$cmd .= "mv $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
 	return $cmd;
 }
 
@@ -698,6 +717,7 @@ sub SplitToCell_local {
 
 	my $rev = &fix_path_problems()->{33}->{'fix'};
 	my $fix = { map { $rev->{$_} => $_ } keys %$rev };
+	print "using this comuter to calculate - this can take a lot of time!\n";
 
 #die "this should fix the path problems::\n \$problems = ".root->print_perl_var_def( $fix ).";\n";
   FILES:
@@ -705,24 +725,32 @@ sub SplitToCell_local {
 		my $pid   = $pm->start and next FILES;
 		my $ofile = $fix->{ $R1[$i] };
 		my $f     = root->filemap( $R1[$i] );
-
+		my $start = DateTime->now();
 		$ofile =~ s/.R1.*$//;
+		print
+"processing files R1 R2 and I1 like $f->{'filename'} in path $f->{'path'}\n\tUsing script $outpath/$f->{'filename'}_SplitToCell.sh\n";
 
 		my $cmd = &SpitCell_CMD( $R1[$i], $R2[$i], $I1[$i], $fast_tmp, $ofile );
 
-		push(
-			@slurmIDs,
-			$SLURM->run(
-				$cmd,
-				"$outpath/$f->{'filename'}_SplitToCell",
-				"$outpath/$ofile.annotated.fastq.gz"
-			)
-		);
+		unless ( -f "$outpath/$ofile.annotated.fastq.gz" ) {
 
+			warn "the outfile '$outpath/$ofile.annotated.fastq.gz' is missing\n";
+			push(
+				@slurmIDs,
+				$SLURM_local->run(
+					$cmd,
+					"$outpath/$f->{'filename'}_SplitToCell",
+					"$outpath/$ofile.annotated.fastq.gz"
+				)
+			);
+		}
 		push( @fastqs, "$outpath/$ofile.annotated.fastq.gz" );
 		if ($debug) {
 			system( 'touch ' . "$outpath/$ofile.annotated.fastq.gz" );
 		}
+		$start_this =
+		  &check_time_since( $start, 'SplitToCell ' . $f->{'filename'} );
+
 		$pm->finish;
 	}
 	$pm->wait_all_children;
@@ -740,13 +768,10 @@ sub SplitToCell {
 
 	## now I need to start one script for every R1 R2 I1 combination
 	my ( @slurmIDs, @fastqs );
-
-	# Here I need to make sure, that the path the files are in are all the same
-
+	$SLURM->options( 'n', 2 )
+	  ; ## set the number of cores to two (gzip in gzip out and the main reformate)
 	my $rev = &fix_path_problems()->{33}->{'fix'};
 	my $fix = { map { $rev->{$_} => $_ } keys %$rev };
-
-#die "this should fix the path problems::\n \$problems = ".root->print_perl_var_def( $fix ).";\n";
 
 	for ( my $i = 0 ; $i < @R1 ; $i++ ) {
 		my $ofile = $fix->{ $R1[$i] };

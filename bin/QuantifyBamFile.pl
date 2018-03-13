@@ -23,7 +23,8 @@
        -infile   :one bam file containing thousands of different cells (Illumnina 10x Chromium)
        -gtf_file :the gtf file for quantification
        -outfile  :the tab separated outfile (will be overwritten)
-       -forks    :how many processors to use? default =4
+       -drop_chr :state here the chromosome you want to read from the gtf file
+                  read all if undefined
        
        -fastqPath :The path where the original fastq files were converted to the here used input files
        -sampleID  :The sampleID of the 10X sample to process
@@ -74,7 +75,7 @@ my $VERSION = 'v1.0';
 
 my (
 	$help,  $debug,   $database, $infile, $gtf_file,
-	$forks, $outfile, $options, $fastqPath, $sampleID, @options ,
+	$drop_chr, $outfile, $options, $fastqPath, $sampleID, @options ,
 );
 
 Getopt::Long::GetOptions(
@@ -82,7 +83,7 @@ Getopt::Long::GetOptions(
 	"-gtf_file=s"   => \$gtf_file,
 	"-outfile=s"    => \$outfile,
 	"-options=s{,}" => \@options,
-	"-forks=s"      => \$forks,
+	"-drop_chr=s"      => \$drop_chr,
 	"-fastqPath=s"  => \$fastqPath,
 	"-sampleID=s"   => \$sampleID,
 
@@ -106,9 +107,6 @@ unless ( defined $outfile ) {
 }
 unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
-}
-unless ( defined $forks ) {
-	$forks = 1;
 }
 
 unless ( -d $fastqPath ) {
@@ -145,7 +143,7 @@ $task_description .= " -outfile '$outfile'" if ( defined $outfile );
 $task_description .= ' -options "' . join( '" "', @options ) . '"'
   if ( defined $options[0] );
 $task_description .= ' -fastqPath '.$fastqPath;
-$task_description .= ' -forks '.$forks;
+$task_description .= ' -drop_chr '.$drop_chr if ( defined $drop_chr );
 $task_description .= ' -sampleID '. $sampleID;
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
@@ -172,7 +170,7 @@ my $self = {
 };    # the script should store global variables here
 
 ## turn on autoflush for the process bar:
-$| = 1;
+#$| = 1; ## rather not do that now that I have automated the scripts :-)
 
 my $fm = root->filemap($outfile);
 mkdir( $fm->{'path'} ) unless ( -d $fm->{'path'} );
@@ -195,8 +193,21 @@ my $start       = time;
 my $first_start = $start;
 
 my $gtf_obj = stefans_libs::file_readers::gtf_file->new();
+if ( defined $drop_chr ) {
+	my $filter = sub{
+		my ( $self, $array , $i ) = @_;
+		return @$array[0] eq $self->{'tmp'};
+	};
+	$gtf_obj->{'tmp'} = $gtf_obj->_checkChr($drop_chr);
+	$gtf_obj->read_file($gtf_file, $filter);
+}else {
+	$gtf_obj->read_file($gtf_file);
 
-$gtf_obj->read_file($gtf_file);
+}
+
+if ( $gtf_obj->Lines() == 0 ){
+	die "I do not have any information in the gtf file for chr '".$gtf_obj->_checkChr($drop_chr)."' - useless aprocess.\n";
+}
 
 my $quantifer =
   $gtf_obj->select_where( 'feature',
@@ -424,9 +435,13 @@ $self->{'next_start'} = 0;
 $self->{'last_IDS'}   = [];
 
 unless ( $debug ) { ## debugging the 10x pipeline here
+	## turn on autoflush for the process bar:
+	if ( -t STDOUT ) {
+		$| = 1;
+	}
 	$bam_file->filter_file( $infile, \&filter );
 	$self->{total_reads} = $runs;
-
+	$| = 0;
 	&measure_time_and_state("Mapping the UMIs to the transcriptome");
 
 	print
@@ -454,6 +469,7 @@ unless ( $debug ) { ## debugging the 10x pipeline here
 	$result->print2table();
 	
 }
+&measure_time_and_state("Saving th outfiles");
 print "The file '$outfile' now contains all results from bam file '$infile'\n";
 exit(1);
 
@@ -1109,10 +1125,10 @@ warn "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n" if
 		}
 	}
 	# this is a horrible performance killer!
-	if ($result->Lines() > 100 ) {
+	if ($result->Lines() > 1000 ) {
 		## Ok we shurely can store - say 50 of them in the database and get rid of the data here - or?
-		print "I am storing 50 gene results in the tables\n";
-		$result->print2table( undef, 50 );
+		print "I am storing 1950 gene results in the tables\n";
+		$result->print2table( undef, 950 );
 	}
 
 }

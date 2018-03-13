@@ -41,7 +41,7 @@ ok( -f $coverage, "coverage file '$coverage'");
 
 $genome = '~/lunarc/indicies/hisat2/mouse/mm10/genome'; ## OK that is very specific - should I cerate a minimal here?
 
-@options = qw( A lsens2017-3-2 t 02:00:00 p dell min_UMIs 1 report_on gene_name);
+@options = qw( A lsens2017-3-2 t 02:00:00 p dell w nodelist=ls2-n3 min_UMIs 1 report_on gene_name);
 
 my $cmd =
     "perl -I $plugin_path/../lib  $exec "
@@ -55,7 +55,7 @@ my $cmd =
 . " -fast_tmp ". "$plugin_path/data/output/10xpipeline/fast_tmp"
 . " -outpath " . $outpath 
 . " -sname sampleX"
-. " -local" ## I do not wnat to stress the SLURM env - and I do not wnt to detect errors in the thing!
+#. " -local" ## I do not wnat to stress the SLURM env - and I do not wnt to detect errors in the thing!
 #. " -debug"
 ;
 
@@ -67,7 +67,7 @@ print "Run time: $duration s\n";
 
 ok ( -d $outpath , "outpath created" );
 my $run_folder = $outpath."/10xpipeline_run_files";
-ok ( -d $run_folder, "run filkes folder" );
+ok ( -d $run_folder, "run files folder" );
 
 ## In the main run folder I get all the merged fastq files:
 
