@@ -194,6 +194,7 @@ my $first_start = $start;
 
 my $gtf_obj = stefans_libs::file_readers::gtf_file->new();
 if ( defined $drop_chr ) {
+	print "I read the chr ".$gtf_obj->_checkChr($drop_chr)." from the gtf file\n";
 	my $filter = sub{
 		my ( $self, $array , $i ) = @_;
 		return @$array[0] eq $self->{'tmp'};

@@ -150,7 +150,7 @@ if ( $result_table->{'data_storage_spliced'}){
 	print "Data is stored in with splice information";
 }
 
-$result_table->write_table( $outfile );
+$result_table->print2file( $outfile );
 
 if ( $createTable ) {
 	$result_table->print2table ( $outfile );

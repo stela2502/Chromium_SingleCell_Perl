@@ -260,7 +260,7 @@ sub import_database {
 		}
 	}
 	## now I need to update the internal objects too!
-	
+
 	$obj->{'use_this_sql'} = "select max(id) from datavalues";
 	my $tmp;
 	$tmp = $obj->get_data_table_4_search(
@@ -296,7 +296,7 @@ sub read_file {
 	my ( $self, $file ) = @_;
 	$self->Add_2_Header('Gene_ID');
 	$self->{'filename'} = $file;
-	if ( defined $file and -f $file ) {		
+	if ( defined $file and -f $file ) {
 		my $obj = stefans_libs::database::Chromium_SingleCell::datavalues->new(
 			{
 				file                   => $file,
@@ -353,96 +353,115 @@ The function can also be used to read in cellRangers matrix files.
 =cut
 
 sub import_tables {
-	my ($self, @path ) = @_;
+	my ( $self, @path ) = @_;
 	## first check if all files are existing:
-	my ($ifile, @line);
-	foreach my $path ( @path ) { 
-		my $err = '';
-		foreach ( 'barcodes.tsv', 'genes.tsv' , 'matrix.mtx') {
-			unless ( -f File::Spec->catfile($path, $_ ) ){
+	my ( $ifile, @line );
+  FILE:
+	foreach my $path (@path) {
+		my $local_ids = ref($self)->new();
+		my $err       = '';
+		foreach ( 'barcodes.tsv', 'genes.tsv', 'matrix.mtx' ) {
+			unless ( -f File::Spec->catfile( $path, $_ ) ) {
 				$err .= "file $_ missing in path $path\n";
 			}
 		}
-		if ( $err =~ m/\w/ ){
+		if ( $err =~ m/\w/ ) {
 			warn $err;
-			return 0;
+			next FILE;
 		}
-		$ifile = File::Spec->catfile($path, 'barcodes.tsv'); 
-		open ( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
-		while ( <IN> ) {
+		$ifile = File::Spec->catfile( $path, 'barcodes.tsv' );
+		open( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
+		while (<IN>) {
 			chomp();
-			$self->sample2id( $_ );
-			$self->Add_2_Header( $_ );
+			$self->sample2id($_);
+			$self->Add_2_Header($_);
+			$local_ids->sample2id($_);
 		}
-		close ( IN );
-		
-		$ifile = File::Spec->catfile($path, 'genes.tsv'); 
-		open ( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
-		while ( <IN> ) {
+		close(IN);
+
+		$ifile = File::Spec->catfile( $path, 'genes.tsv' );
+		open( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
+		while (<IN>) {
 			chomp();
-			@line = split(" ",$_);
+			@line = split( " ", $_ );
+			$line[0] ||= 'fake'
+			  ; ## I have a problem in the Quantify script that adds crap for one fake sample...
+			    #print "\nI am adding gene '$line[0]' = ".
 			$self->gene2id( $line[0] );
+			$local_ids->gene2id( $line[0] );
 		}
-		close ( IN );
-		
-		$ifile = File::Spec->catfile($path, 'matrix.mtx'); 
-		open ( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
+		close(IN);
+
+		$ifile = File::Spec->catfile( $path, 'matrix.mtx' );
+		open( IN, "<$ifile" ) or die "I could not open the file '$ifile'\n$!";
 		my $i = 0;
-		while ( <IN> ) {
-			$i ++;
-			if ($_ =~ m/^%/) {
-				while ( <IN> ) { ## skip the 3 first lines
-					$i ++;
-					last if ( $i == 3);
+		while (<IN>) {
+			$i++;
+			if ( $_ =~ m/^%/ ) {
+				while (<IN>) {    ## skip the 3 first lines
+					$i++;
+					last if ( $i == 3 );
 				}
-				## set mode to 
+				## set mode to
 				$self->{'data_storage_spliced'} = 0;
-			}else {
+			}
+			else {
 				chomp();
-				@line = split(" ",$_);
+				@line = split( " ", $_ );
+
+   #				print "I am adding data for local gene ".$local_ids->id2gene( $line[0] )
+   #					. " with id '$line[0]' has global id "
+   #					. $self->gene2id($local_ids->id2gene( $line[0] ))."\n";
 				$self->AddDataset(
 					{
-						Gene_ID   => $self->id2gene( $line[0] ),
-						Sample_ID => $self->id2sample( $line[1] ),
+						Gene_ID   => $local_ids->id2gene( $line[0] ),
+						Sample_ID => $local_ids->id2sample( $line[1] ),
 						value     => $line[2]
-					} , 0
+					},
+					0
 				);
-				if ( @line == 4) {
+				if ( @line == 4 ) {
+					$self->{'data_storage_spliced'}      = 1;
+					$local_ids->{'data_storage_spliced'} = 1;
 					$self->AddDataset(
 						{
-							Gene_ID   => $self->id2gene( $line[0] ),
-							Sample_ID => $self->id2sample( $line[1] ). " spliced",
-							value     => $line[3]
-						} , 0
-					) if ( $line[3] > 0);
-					$self->{'data_storage_spliced'} = 1;
-					warn "Data storeage type set to 'splced'\n";
+							Gene_ID   => $local_ids->id2gene( $line[0] ),
+							Sample_ID => $local_ids->id2sample( $line[1] )
+							  . " spliced",
+							value => $line[3]
+						},
+						0
+					) if ( $line[3] > 0 );
+					warn "Data storeage type set to 'spliced'\n";
 				}
-					
+
 			}
 			last;
 		}
-		while ( <IN> ) {
+		while (<IN>) {
 			chomp();
-			@line = split(" ",$_);
+			@line = split( " ", $_ );
 			$self->AddDataset(
 				{
-					Gene_ID   => $self->id2gene( $line[0] ),
-					Sample_ID => $self->id2sample( $line[1] ),
+					Gene_ID   => $local_ids->id2gene( $line[0] ),
+					Sample_ID => $local_ids->id2sample( $line[1] ),
 					value     => $line[2]
-				} , 0
+				},
+				0
 			);
 			if ( $self->{'data_storage_spliced'} ) {
 				$self->AddDataset(
 					{
-						Gene_ID   => $self->id2gene( $line[0] ),
-						Sample_ID => $self->id2sample( $line[1] ). " spliced",
-						value     => $line[3]
-					} , 0
-				) if ( $line[3] > 0);
+						Gene_ID   => $local_ids->id2gene( $line[0] ),
+						Sample_ID => $local_ids->id2sample( $line[1] )
+						  . " spliced",
+						value => $line[3]
+					},
+					0
+				) if ( $line[3] > 0 );
 			}
 		}
-		close ( IN );
+		close(IN);
 	}
 	return $self;
 }
@@ -463,68 +482,73 @@ The easiest way to combine them is to use the object again - read all files and 
 =cut
 
 sub export2file {
-	my ($self, $obj, $ofile ) = @_;
+	my ( $self, $obj, $ofile ) = @_;
 	my @order;
-	if ( $ofile =~m/matrix.mtx$/ ){
-		@order = ( 2,1,3 );
-		if ( $self->{'data_storage_spliced'}){
-			push( @order,4);
+	if ( $ofile =~ m/matrix.mtx$/ ) {
+		@order = ( 2, 1, 3 );
+		if ( $self->{'data_storage_spliced'} ) {
+			push( @order, 4 );
 		}
-	}else{
-		@order= (1);
+	}
+	else {
+		@order = (1);
 	}
 	if ( $obj->Lines() > 0 ) {
-		if ( -f  $ofile) {
-			open ( OUT, ">>$ofile") or die "could not add to file '$ofile'\n$!";
-		}else {
-			open ( OUT, ">$ofile") or die "could not create file '$ofile'\n$!";
+		if ( -f $ofile ) {
+			open( OUT, ">>$ofile" ) or die "could not add to file '$ofile'\n$!";
 		}
-		while( my $line = shift(@{$obj->{'data'}}) ) {
-			#warn "export to $ofile in order".join(" ",@order)." the values".join(" ", @$line[@order])."\n";
-			print OUT join(" ", @$line[@order])."\n";
+		else {
+			open( OUT, ">$ofile" ) or die "could not create file '$ofile'\n$!";
 		}
-		close ( OUT );
+		while ( my $line = shift( @{ $obj->{'data'} } ) ) {
+#			warn "export to $ofile in order"
+#			  . join( " ", @order )
+#			  . " the values"
+#			  . join( " ", @$line[@order] ) . "\n";
+			print OUT join( " ", @$line[@order] ) . "\n";
+		}
+		close(OUT);
 	}
 	return $self;
 }
 
 sub print2table {
 	my ( $self, $filename, $lines ) = @_;
-	
+
 	$lines ||= $self->Lines();
 	$filename ||= $self->{'filename'};
-	
+
 	my $fm = root->filemap($filename);
-	my $outpath = File::Spec->catfile($fm->{'path'}, $fm->{'filename_base'} );
-	mkdir( $outpath ) unless ( -d $outpath);
-	my $ofile;	
-	
+	my $outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
+	mkdir($outpath) unless ( -d $outpath );
+	my $ofile;
+
 	## genes
 	my $genes = $self->prepare_gene_table();
-	$ofile = File::Spec->catfile($outpath, 'genes.tsv');
-	$self->export2file( $genes,  $ofile);
-	
+	$ofile = File::Spec->catfile( $outpath, 'genes.tsv' );
+	$self->export2file( $genes, $ofile );
+
 	## samples
 	my $samples = $self->prepare_sample_table();
-	$ofile = File::Spec->catfile($outpath, 'barcodes.tsv');
-	$self->export2file( $samples,  $ofile);
+	$ofile = File::Spec->catfile( $outpath, 'barcodes.tsv' );
+	$self->export2file( $samples, $ofile );
 
 	## data
 	my $data = $self->prepare_data_table($lines);
-	$ofile = File::Spec->catfile($outpath, 'matrix.mtx');
-	$self->export2file($data, $ofile);
-	
-	return $self,
+	$ofile = File::Spec->catfile( $outpath, 'matrix.mtx' );
+	$self->export2file( $data, $ofile );
+
+	return $self,;
 }
 
 sub print2file {
 	my ( $self, $filename, $lines, $type ) = @_;
 	$type ||= 'database';
 	if ( $type eq "table" ) {
-		return $self->print2table( $filename, $lines  );
-	} 
+		return $self->print2table( $filename, $lines );
+	}
 	$filename ||= $self->{'filename'};
-	
+
 	$lines ||= $self->Lines();
 	my $obj = stefans_libs::database::Chromium_SingleCell::datavalues->new(
 		{
@@ -546,12 +570,12 @@ sub print2file {
 	}
 
 	$samples = $self->prepare_sample_table();
-	
+
 	if ( $samples->Lines() > 0 ) {
 		$batch->batch_import( $obj->{'samples'}, $samples );
 	}
 
-	$data = $self->prepare_data_table($lines);
+	$data = $self->prepare_data_table($lines, my $save=1);
 
 	if ( $data->Lines() > 0 ) {
 		$batch->batch_import( $obj, $data );
@@ -562,7 +586,7 @@ sub print2file {
 
 sub prepare_gene_table {
 	my $self = shift;
-	
+
 	my $genes = data_table->new();
 	$genes->Add_2_Header( [ 'id', 'gname' ] );
 	$self->{'as_array'} = {};
@@ -584,22 +608,23 @@ sub prepare_gene_table {
 
 sub prepare_sample_table {
 	my $self = shift;
-	
+
 	my $samples = data_table->new();
 	$samples->Add_2_Header( [ 'id', 'sname' ] );
 	$self->{'as_array'} = {};
 	my $ids;
 	map {
 		if ( $self->sample2id($_) > $self->{'__lastSampleID__'} ) {
-			unless ( $ids->{$self->sample2id($_)} ){
+			unless ( $ids->{ $self->sample2id($_) } ) {
 				push( @{ $samples->{'data'} }, [ $self->sample2id($_), $_ ] );
-				$ids->{$self->sample2id($_)} = 1;
-			#	warn "Adding sample $_ with id ".$self->sample2id($_)."\n";
-			}	
+				$ids->{ $self->sample2id($_) } = 1;
+
+				#	warn "Adding sample $_ with id ".$self->sample2id($_)."\n";
+			}
 		}
 
-	  } grep { !/Gene_ID/ } @{ $self->{'header'} };
-	  ;    ## only if the data is not already in the database
+	} grep { !/Gene_ID/ } @{ $self->{'header'} };
+	;    ## only if the data is not already in the database
 	if ( $samples->Lines() > 0 ) {
 		$self->{'__lastSampleID__'} =
 		  scalar( keys %{ $self->{'__sample2id__'} } );
@@ -608,31 +633,34 @@ sub prepare_sample_table {
 }
 
 sub prepare_data_table {
-	my ($self, $lines)  = @_;
+	my ( $self, $lines, $save ) = @_;
 	my $data = data_table->new();
+	$save ||= 0;
 
-	my ( $gene_id );
+	my ( $gene_id, @store );
 
 	my ( $hash, $data_id, $sname, $key, $prog );
 	## get last ID
 	$data_id = $self->{'__lastDataID__'};
-	$prog = 0;
-	local $| = 1; ## local progress bar
+	$prog    = 0;
+	local $| = 1;    ## local progress bar
+
 	if ( $self->{'data_storage_spliced'} ) {
 		$data->Add_2_Header(
 			[ 'id', 'sample_id', 'gene_id', 'value', 'spliced' ] );
 		$data->Add_unique_key( 'data_sg', [ 'sample_id', 'gene_id' ] );
 		while ( my $line = shift( @{ $self->{'data'} } ) ) {
+			push( @store, $line );    ## in case we need to regen the object
 			@$hash{ @{ $self->{'header'} } } = @$line;
 
 			#print "one line = \$exp = ".root->print_perl_var_def($hash ).";\n";
 			$gene_id = $self->gene2id( $hash->{'Gene_ID'} );
-			if ( $prog++ % 100 == 0) {
-				print "-$prog-";
+			if ( $prog++ % 100 == 0 ) {
+				print ".";
 			}
 			map {
 				if ( defined $hash->{$_} )
-				{    ## simple only the sample id no splicing
+				{                     ## simple only the sample id no splicing
 					unless ( $_ =~ m/spliced/ ) {
 						push(
 							@{ $data->{'data'} },
@@ -640,11 +668,12 @@ sub prepare_data_table {
 								++$data_id, $self->sample2id($_),
 								$gene_id,   $hash->{$_},
 								0
-							]    ## default spliced to 0
+							]         ## default spliced to 0
 						) if ( defined $hash->{$_} );
-						$key = [ $self->sample2id($_), $gene_id];
+						$key = [ $self->sample2id($_), $gene_id ];
 						$key = "@$key";
-						$data->{'uniques'}->{'data_sg'}->{$key} = $data->Lines()-1;
+						$data->{'uniques'}->{'data_sg'}->{$key} =
+						  $data->Lines() - 1;
 					}
 					else {
 						## find the right ID!
@@ -659,11 +688,13 @@ sub prepare_data_table {
 			} grep { !/Gene_ID/ } @{ $self->{'header'} };
 			last if ( ( --$lines ) == 0 );
 		}
+		print "\n";
 	}
 	else {
 		$data->Add_2_Header( [ 'id', 'sample_id', 'gene_id', 'value' ] );
 		$data->Add_unique_key( 'data_sg', [ 'sample_id', 'gene_id' ] );
 		while ( my $line = shift( @{ $self->{'data'} } ) ) {
+			push( @store, $line );    ## in case we need to regen the object
 			@$hash{ @{ $self->{'header'} } } = @$line;
 
 			#print "one line = \$exp = ".root->print_perl_var_def($hash ).";\n";
@@ -671,7 +702,7 @@ sub prepare_data_table {
 
 			map {
 				if ( defined $hash->{$_} )
-				{    ## simple only the sample id no splicing
+				{                     ## simple only the sample id no splicing
 
 					push(
 						@{ $data->{'data'} },
@@ -679,25 +710,31 @@ sub prepare_data_table {
 							++$data_id, $self->sample2id($_),
 							$gene_id,   $hash->{$_},
 							0
-						]    ## default spliced to 0
+						]             ## default spliced to 0
 					) if ( defined $hash->{$_} );
-					$key = [ $self->sample2id($_), $gene_id];
+					$key = [ $self->sample2id($_), $gene_id ];
 					$key = "@$key";
-					$data->{'uniques'}->{'data_sg'}->{$key} = $data->Lines()-1;
+					$data->{'uniques'}->{'data_sg'}->{$key} =
+					  $data->Lines() - 1;
 				}
 			} grep { !/Gene_ID/ } @{ $self->{'header'} };
 			last if ( ( --$lines ) == 0 );
 		}
 	}
-	if ( $data->Lines() > 0 ) {
-		$self->{'__lastDataID__'} = $data_id;
+	unless ($save) {
+		warn "I got save == $save and therefore I drop the data\n";
+		if ( $data->Lines() > 0 ) {
+			$self->{'__lastDataID__'} = $data_id;
+		}
+		$self->{'uniques'}->{'Gene_ID'} = undef;
 	}
-	$| = 0; ## local progress bar off.
-	
-	$self->{'uniques'}->{'Gene_ID'} =
-	  undef; 
+	else {
+		warn "we restore the data\n";
+		$self->{'data'} = \@store;
+	}
+	$| = 0;    ## local progress bar off.
+
 	return $data;
 }
-
 
 1;

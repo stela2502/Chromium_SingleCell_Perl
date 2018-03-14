@@ -83,7 +83,7 @@ my $VERSION = 'v1.0';
 my (
 	$help,     $debug,  $database, $gtf,     $fast_tmp, $local,
 	$coverage, $genome, $outpath,  $options, @options,  @R1,
-	@R2,       @I1,     $sname,    $n
+	@R2,       @I1,     $sname,    $n, $avail_chr
 );
 
 Getopt::Long::GetOptions(
@@ -461,6 +461,7 @@ $cmd = "JoinResultTables.pl";
 $cmd .= " -outfile $outpath_orig/$sname";
 $cmd .= " -paths '" . join( "' '", @$paths ) . "'";
 $cmd .= " -createTable";
+$cmd .= " -force"; ## I want the database to be re-created!
 $cmd .= " -debug" if ($debug);
 
 print "JoinResultTables is started like that:\n" . $cmd . "\n";
@@ -542,6 +543,7 @@ sub QuantifyBamFile_CMD {
 	my $fm       = root->filemap($bam_file);
 
 	my $opath = "$fast_tmp/$sname" . "_$fm->{'filename_base'}";
+
 	if ( -d $opath ) {
 		system( 'rm -RF ' . $opath );
 	}
@@ -555,19 +557,52 @@ sub QuantifyBamFile_CMD {
 	$cmd .= " -sampleID $sname.$fm->{'filename_base'}";
 	$cmd .= " -gtf_file $gtf";
 	
-	if ( $fm->{'filename_base'} =~ m/(.*)_$sname/ ) {
-		$cmd .= " -drop_chr ".stefans_libs::file_readers::gtf_file->_checkChr( $1 );
+	my $tmp = $fm->{'filename'};
+	if ( $tmp =~ m/(.*)_$sname/ ) {
+		#die "I would add the chromosome ".&getChr_name($1)."\n";
+		$cmd .= " -drop_chr ".&getChr_name($1);
+	}else {
+		die "Hey we should be able to identify a chromosome in $tmp - but we failed!\n";
 	}
+	
 	$cmd .= " -debug" if ($debug);
 
 	$cmd .= "\nmv $opath $outpath/$sname.$fm->{'filename_base'}";
-	$cmd .= "\nmv $fast_tmp/$sname.$fm->{'filename_base'}* $outpath/$sname.$fm->{'filename_base'}/"; #copy the log file, too.
+	$cmd .= "\nmv $fast_tmp/$sname.$fm->{'filename_base'}*.log $outpath/$sname.$fm->{'filename_base'}/"; #copy the log file, too.
 
 	return $cmd;
 }
 
 sub byFileSize {
 	-s $b <=> -s $a;
+}
+
+sub getChr_name{
+	my $chr = shift;
+	unless ( defined $avail_chr ) {
+		open ( IN, "<$coverage" ) or die "getChr_name - I can not read from coverage file '$coverage'\n$!\n";
+		my @line;
+		while ( <IN> ) {
+			chomp;
+			@line=split(/\s+/, $_);
+			$avail_chr->{$line[0]} = 1;
+		}
+		close ( IN );
+	}
+	if ( $avail_chr->{$chr} ) {
+		return $chr;
+	}
+	$chr =~ s/^chr//;
+	if ( $avail_chr->{$chr} ) {
+		return $chr;
+	}
+	## now it starts to get tricky - there might be a .numer in the end that I loose in the process.
+	## there is only a .1 at the moment - so lets hope that stays like that and go for it.
+	if ( $avail_chr->{$chr.".1"} ) {
+		return $chr.".1";
+	}
+	## so now I am not sure what to do - lets die
+	die "Sorry, but the chr $chr is not in my list of chromosomes: \n\t".join("\n\t",sort keys %$avail_chr)."\n";
 }
 
 sub QuantifyBamFile_local {
@@ -578,12 +613,11 @@ sub QuantifyBamFile_local {
 	print "using this comuter to calculate - this can take a lot of time!\n";
 	FILES:
 	foreach my $bam_file ( sort byFileSize @chrBams) {
+		my $fm = root->filemap($bam_file);
+		push( @paths, "$outpath/$sname.$fm->{'filename_base'}" );
 		my $pid   = $pm->start and next FILES;
 		
-		my $fm = root->filemap($bam_file);
-
 		my $cmd = QuantifyBamFile_CMD($bam_file);
-		push( @paths, "$outpath/$sname.$fm->{'filename_base'}" );
 		print "Quantify cmd:".$cmd."\n";
 		$SLURM_local->run(
 			$cmd,
