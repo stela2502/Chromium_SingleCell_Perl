@@ -263,7 +263,7 @@ $outpath .= "/10xpipeline_run_files";
 mkdir($outpath) unless ( -d $outpath );
 
 my $fm = root->filemap( "$outpath/" . $$ . "_10xpipeline.pl.log" );
-$outpath = $fm->{'path'};
+#$outpath = $fm->{'path'};
 
 ## turn on autoflush for the process bar:
 #$| = 1;
@@ -339,11 +339,14 @@ print "we start the hist2 mapping process:\n" . $hisat2 . "\n";
 
 #die "First make sure we got all files!\n";
 
+system( "rm $outpath/hisat2_run.local*");
+
 $SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
 ## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/hisat2_run<PID>.err and $outpath/hisat2_run<PID>.out file
 
 ## Identify the run ids we need to wait for:
-my @tmp = get_files_from_path( $outpath_orig, "hisat2_run.local.*out\$" );
+
+my @tmp = get_files_from_path( $outpath, "hisat2_run.local.*out" );
 unless ( -f $tmp[0] ) {
 	Carp::confess("I did not get a usable hisat out file: '$tmp[0]'\n");
 }
@@ -492,12 +495,13 @@ sub get_files_from_path {
 	  or die "I could not read from the directory '$path'\n$!\n";
 	my @dat = grep { !/^\./ } readdir(DIR);
 	closedir(DIR);
+	print "I get files from path '$path'\n";
 	foreach my $select (@matches) {
 
-		#print "I select all files matching '$select'\n";
+		print "I select all files matching '$select'\n".join("\n",@dat)."\n";
 		@dat = grep { /$select/ } @dat;
 
-		#print "Still in the game:".join("\n",@dat)."\n\n";
+		print "Still in the game:".join("\n",@dat)."\n\n";
 	}
 	@dat = map { "$path/$_" } @dat;
 	return @dat;

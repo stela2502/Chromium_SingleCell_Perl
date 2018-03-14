@@ -4,6 +4,8 @@ use warnings;
 use stefans_libs::root;
 use Test::More tests => 10;
 use stefans_libs::flexible_data_structures::data_table;
+use stefans_libs::result_table;
+
 
 use FindBin;
 my $plugin_path = "$FindBin::Bin";
@@ -16,14 +18,17 @@ my $outpath = "$plugin_path/data/output/QuantifyBamFile";
 if ( -d $outpath ) {
 	system("rm -Rf $outpath");
 }
+my $fastqPath = "$plugin_path/data/QuantifBamFile_Fake_fastq_folder";
+ok ( -d $fastqPath, "the fastqPath");
+ok ( -f $fastqPath."/.passing_samples.txt", "the hidden file .passing_samples.txt");
 
-$gtf_file = "$plugin_path/data/GOI.annotation.genecode.v12.gff3";
+$gtf_file = "$plugin_path/data/Spliced_Reads.gtf";
 ok ( -f $gtf_file, 'test gtf file exists');
 
-$infile = "$plugin_path/data/Chromium_hisat2.bam";
+$infile = "$plugin_path/data/Spliced_Reads.bam";
 ok ( -f $infile, 'test infile exists');
 
-$outfile = "$outpath/test.xls";
+$outfile = "$outpath/test";
 
 #improvement by using UMIs to merge samples:
 #no usage: 61773 samples and 4 genes
@@ -47,7 +52,9 @@ my $cmd =
 . " -infile " . $infile 
 . " -outfile " . $outfile 
 . " -options " . join(' ', @options )
-. " -debug"
+. " -fastqPath $fastqPath"
+. " -sampleID TestSample"
+#. " -debug"
 ;
 
 my $start = time;
@@ -55,37 +62,60 @@ system( $cmd );
 my $duration = time - $start;
 print "Execution time: $duration s\n";
 
+## now that was simple...
+## the outfiles are
+my @outfiles = map{ $outfile."/$_" } qw(barcodes.tsv  genes.tsv  matrix.mtx);
+map { ok ( -f $_, "outfile $_") } @outfiles;
 
-#Finished with mapping: 25261 samples and 4 gene_id's detected
-#Execution time: 18 s
+my $result_table = stefans_libs::result_table->new();
+$result_table -> import_tables ( $outfile );
+$result_table ->line_separator(';');
 
-## when dropping samples with no hit to the transcriptome
-#Finished with mapping: 9000 samples and 4 gene_id's detected
-#Execution time: 19 s
+#for ( my $i = 0; $i < 2; $i++ ){
+#	my %t;
+#	@t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[$i]};
+#	print "$i : \$exp = ".root->print_perl_var_def( \%t ).";\n";
+#	
+#}
 
-## when dropping samples with less than 100 hits to the transcriptome
-#Finished with mapping: 15 samples and 4 gene_id's detected
-#Done
-#Execution time: 25 s
+$exp = {
+  'ATAGACCGTGGTGTAG' => '2',
+  'CACAAACCACTTCTGC' => '2',
+  'CCGTGGACATAACCTG' => undef,
+  'CCGTGGACATAACCTG spliced' => undef,
+  'GTCATTTAGTCGTTTG' => '2',
+  'GTCCTCATCTGCAGTA' => '2',
+  'Gene_ID' => 'ENSMUSG00000108159.1',
+  'TAAGCGTGTGGGTATG' => undef,
+  'TAAGCGTGTGGGTATG spliced' => undef,
+  'TACAGTGGTTATTCTC' => '2',
+  'TGCGTGGAGCTACCGC' => '6'
+};
 
-## After using PDL for the computational stuff and min_umi 100
-##Finished with mapping: 161 samples and 4 gene_id's detected
-##Done
-##Execution time: 17 s
+my $t;
+@$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
-## After using PDL for the computational stuff and min_umi 10
-##Finished with mapping: 646 samples and 4 gene_id's detected
-##Done
-##Execution time: 19 s
+is_deeply( $t, $exp, "data line for ENSMUSG00000108159.1" );
 
-@values = undef;
-foreach ('test.samples.xls', 'test.xls', 'test.spliced.xls','test.merge.log','test.original.xls', 'test.xls.log',
-'test.original_merged.xls'
-) {
-	ok ( -f "$outpath/$_", "outfile $_");
-	push ( @values , "$outpath/$_");
-}
-system( "wc ". join(" ", @values));
+$exp = {
+  'ATAGACCGTGGTGTAG' => undef,
+  'CACAAACCACTTCTGC' => undef,
+  'CCGTGGACATAACCTG' => '2',
+  'CCGTGGACATAACCTG spliced' => '2',
+  'GTCATTTAGTCGTTTG' => undef,
+  'GTCCTCATCTGCAGTA' => undef,
+  'Gene_ID' => 'ENSMUSG00000106728.3',
+  'TAAGCGTGTGGGTATG' => '3',
+  'TAAGCGTGTGGGTATG spliced' => '3',
+  'TACAGTGGTTATTCTC' => undef,
+  'TGCGTGGAGCTACCGC' => undef
+};
+
+$t = undef;
+
+@$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[1]};
+
+is_deeply( $t, $exp, "data line for ENSMUSG00000106728.3" );
 
 
 

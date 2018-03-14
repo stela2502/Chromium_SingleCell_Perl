@@ -36,7 +36,7 @@ $outfile = "$outpath/singleCells.CellRanger.chr11_87760834_87856494_quantifed";
 #with umi: 25261 and 4 genes
 #with umi and sample merge: 16224 samples and 4 genes detected
 
-# with only 4 geens we are down to only half the samples.
+# with only 4 genes we are down to only half the samples.
 
 @options = (
 	'min_UMIs', 1
