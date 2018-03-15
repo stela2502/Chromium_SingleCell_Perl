@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 68;
+use Test::More tests => 289;
 use stefans_libs::flexible_data_structures::data_table;
 use File::Spec::Functions;
 
@@ -23,8 +23,8 @@ my $tmp_path =  File::Spec->catfile($outpath, 'tmp');
 
 my $data_path = File::Spec->catfile( $plugin_path, 'data','ReshuffleBamFiles' );
 
-ok (-f "$data_path/exprected_outfiles_no_gtf.txt" );
-open ( IN, "<$data_path/exprected_outfiles_no_gtf.txt" ) or die "package not complete - important infile missing:$data_path/exprected_outfiles_no_gtf.txt\n$!\n";
+ok (-f "$data_path/exprected_outfiles_using_gtf.txt" );
+open ( IN, "<$data_path/exprected_outfiles_using_gtf.txt" ) or die "package not complete - important infile missing:$data_path/exprected_outfiles_no_gtf.txt\n$!\n";
 while( <IN> ) {
 	chomp;
 	push( @outfiles, $_)
@@ -37,7 +37,8 @@ unless ( -d $data_path) {
 	Carp::confess ( "Package error: test files are missing '$data_path'\n" );
 }
 
-$coverage = "$data_path/mm10_chrom_sizes.txt";
+$coverage = "$data_path/GRCm38.p5_chrom_sizes.txt";
+my $gtf = "$data_path/genes.gtf.gz";
 
 my $sampleName = 'test';
 
@@ -47,20 +48,23 @@ my $cmd =
 . " -outpath " . $outpath 
 . " -coverage " . $coverage 
 . " -sampleName $sampleName"
+. " -gtf $gtf"
 . " -n 4"
 . " -tmp_path $tmp_path"
 . " -sampleID TEST"
 #. " -debug"
 ;
+
+system("rm -Rf $outpath/*");
+
 my $start = time;
 system( $cmd );
 my $duration = time - $start;
 print "Run time: $duration s\n";
-#print "\$exp = ".root->print_perl_var_def($value ).";\n";
+
 
 foreach ( @outfiles ) {
 	ok ( -f "$outpath/$_", "outfile $_" );
 }
-
 
 ## This does all seam to work - I have no time to check in detail!

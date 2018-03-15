@@ -407,6 +407,7 @@ my $cmd = 'ReshuffleBamFiles.pl';
 $cmd .= " -bams $outpath/HISAT2_mapped/*.sorted.bam";
 $cmd .= " -outpath $outpath/reshuffled/";
 $cmd .= " -coverage $coverage";
+$cmd .= " -gtf $gtf";
 $cmd .= " -sampleID $sname";
 $cmd .= " -n $n";
 $cmd .= " -tmp_path '$fast_tmp'\n";
@@ -434,9 +435,11 @@ if ($debug) {
 		"$outpath/reshuffled/$sname" . "_reshuffle_script_run",
 		"$outpath/reshuffled/chr1_" . $sname . ".sorted.bam"
 	);
+	
 }
 
 ## wait and report time
+warn "I wait for the slurm ids: ".join(", ",@$SLURM_ids)."\n";
 $start_this =
   &check_time_since( $start_this, 'Reshuffle Bam Files', $SLURM_ids );
 
@@ -458,6 +461,8 @@ else {
 }
 
 ## wait and report time
+warn "I wait for the slurm ids: ".join(", ",@$SLURM_ids)."\n";
+
 $start_this = &check_time_since( $start_this, 'quantify', $SLURM_ids );
 
 $cmd = "JoinResultTables.pl";
@@ -521,8 +526,8 @@ and return the DateTime->now() object used in the call.
 sub check_time_since {
 	my ( $start_last, $msg, $SLURM_ids ) = @_;
 
-	if ( defined($SLURM_ids) eq "ARRAY" and scalar(@$SLURM_ids) > 0 ) {
-		print "waiting for the batch jobs to finish\n";
+	if ( ref($SLURM_ids) eq "ARRAY" and scalar(@$SLURM_ids) > 0 ) {
+		print "waiting for the batch job(s) to finish\n";
 
 		while ( !$SLURM->pids_finished(@$SLURM_ids) ) {
 			print ".";

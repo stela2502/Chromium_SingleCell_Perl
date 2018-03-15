@@ -50,6 +50,8 @@
 use Getopt::Long;
 use Pod::Usage;
 
+#use POSIX;
+
 use stefans_libs::BAMfile;
 use stefans_libs::result_table;
 
@@ -341,9 +343,6 @@ sub sample_and_umi_my {
 	@matching_IDs = split( "_", pop(@matching_IDs) );
 
 	if ( ( !defined $matching_IDs[2] ) or ( !defined $matching_IDs[3] ) ) {
-
-#die "\$exp = " . root->print_perl_var_def( [sample_and_umi_cellranger(@bam_line)] ) . ";\n";
-
 		return sample_and_umi_cellranger(@bam_line);
 		Carp::confess(
 			"Sorry I lack the UMI information - have you used SplitToCells.pl?"
@@ -419,6 +418,12 @@ sub filter {
 
 	warn "\tAll OK - add it somewhere? " . join( ", ", @matching_IDs ) . "\n"
 	  if ($bugfix);
+	if ( @matching_IDs == 0) {
+		## probably the gtf is not correct and the read only overlaps the exon e.g. continues outside the exon?
+		map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g; ## the fist match should be in the exon and overlap to at least 50%
+		#$Seq = ceil($Seq/2);
+		@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] + $Seq );
+	}
 	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
 		                                   #warn "\tNo matching featuires!\n";
 		return;
@@ -439,10 +444,11 @@ sub filter {
 
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
 	$N            = 0;
-	$Seq          = 0;
 	$rem = 0;
 	map { $N   += $_ } $bam_line[5] =~ m/(\d+)N/g;
+	$Seq          = 0;
 	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
+	
 	if ( $N > $Seq ) {
 		map { $rem += $_ } $bam_line[5] =~ m/(\d+)M/;
 		## most probably spliced! (?)

@@ -55,23 +55,26 @@ use Parallel::ForkManager;
 use File::Spec::Functions;
 use DateTime;
 
+use stefans_libs::file_readers::gtf_file;
+
 use FindBin;
 my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
 my (
-	$help,     $debug,    $database,   @bams, $outpath,
-	$coverage, $tmp_path, $sampleID, $n
+	$help,     $debug,    $database, @bams, $outpath,
+	$coverage, $tmp_path, $sampleID, $gtf,  $n
 );
 
 Getopt::Long::GetOptions(
-	"-bams=s{,}"    => \@bams,
-	"-outpath=s"    => \$outpath,
-	"-coverage=s"   => \$coverage,
+	"-bams=s{,}"  => \@bams,
+	"-outpath=s"  => \$outpath,
+	"-coverage=s" => \$coverage,
 	"-sampleID=s" => \$sampleID,
-	"-n=s"          => \$n,
-	"-tmp_path=s"   => \$tmp_path,
+	"-gtf=s"        => \$gtf,
+	"-n=s"        => \$n,
+	"-tmp_path=s" => \$tmp_path,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -121,10 +124,11 @@ my ($task_description);
 $task_description .= 'perl ' . $plugin_path . '/ReshuffleBamFiles.pl';
 $task_description .= ' -bams "' . join( '" "', @bams ) . '"'
   if ( defined $bams[0] );
-$task_description .= " -outpath '$outpath'"       if ( defined $outpath );
-$task_description .= " -coverage '$coverage'"     if ( defined $coverage );
+$task_description .= " -outpath '$outpath'"   if ( -d $outpath );
+$task_description .= " -coverage '$coverage'" if ( -f $coverage );
 $task_description .= " -sampleID '$sampleID'" if ( defined $sampleID );
 $task_description .= " -n $n";
+$task_description .= " -gtf '$gtf'"           if ( -f $gtf );
 
 my $start = DateTime->now();
 
@@ -143,15 +147,43 @@ unless ( -d $tmp_path ) {
 
 open( IN, "<$coverage" )
   or die "I could not open the coverage file '$coverage'\n$!\n";
-my @chrs;
+my ( @chrs, $chr_splices, @tmp );
+
 while (<IN>) {
-	push( @chrs, ( split( "\t", $_ ) )[0] );
+	chomp;
+	@tmp = split( "\t", $_ );
+	push( @chrs, $tmp[0] );
+	$chr_splices->{ $tmp[0] } = ["$tmp[0]:0-$tmp[1]"];
 }
 close(IN);
 
 my $pm = Parallel::ForkManager->new($n);
 
+
 my @ofiles;
+if ( -f $gtf ) {
+
+	unless ( -f "$outpath/chr_splits.txt" ) {
+		my $cmd = "IdentifyGeneFreeRegions.pl"
+			. " -gtf  $gtf"
+			. " -coverage $coverage" 
+			. " -outfile $outpath/chr_splits.txt"
+			. " -step 10000000";
+		print $cmd;
+		system( $cmd );
+	}
+	$chr_splices = undef;
+	open( IN, "<$outpath/chr_splits.txt" )
+	  or die "I could not open the chr_splits.txt file\n";
+	while (<IN>) {
+		chomp;
+		if ( $_ =~ m/(.+):(\d+)-(\d+)/ ) {
+			$chr_splices->{$1} ||= [];
+			push( @{ $chr_splices->{$1} }, $_ );
+		}
+	}
+	close(IN);
+}
 
 FILES:
 foreach my $file (@bams) {
@@ -159,64 +191,78 @@ foreach my $file (@bams) {
 	my $fm = root->filemap($file);
 	my ( $cmd, $ofile );
 	unless ( -f "$file.bai" ) {
-		system("samtools index $file") unless ( $debug );
+		system("samtools index $file") unless ($debug);
 	}
 	my $in;
 	foreach my $chr (@chrs) {
 		unless ( $chr =~ m/^chr/ ) {
-			$chr = "chr$chr"; ## we use --add-chrname in the hisat2 call
+			$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
 		}
-		unless ( -f $outpath. $chr ."_". $sampleID. ".sorted.bam"  ){ ## the final outfile exists
-			unless ( $debug ) {
-			$ofile = File::Spec->catfile( $tmp_path,
-				$chr . "_OP_" . $fm->{'filename'} . ".bam" );
-			}else {
-				$ofile = File::Spec->catfile( $tmp_path,'FAKE_DEBUG_'.
-				$chr . "_OP_" . $fm->{'filename'} . ".bam" );
+
+		foreach my $slice ( @{ $chr_splices->{$chr} } ) {
+			unless ($debug) {
+				$ofile = File::Spec->catfile( $tmp_path,
+					$chr . "_OP_" . $fm->{'filename'} . ".$slice.bam" );
 			}
-			if ( ! -f $ofile ) { ## this outfile exists NOT
-				$cmd = "samtools view -b $file $chr > $ofile";
-				print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
+			else {
+				$ofile = File::Spec->catfile( $tmp_path,
+					    'FAKE_DEBUG_'
+					  . $chr . "_OP_"
+					  . $fm->{'filename'}
+					  . ".$slice.bam" );
+			}
+			unless ( -f $ofile ) {    ## the final outfile exists
+
+				$cmd = "samtools view -b $file $slice > $ofile";
+
 				push( @ofiles, $ofile );
 				## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
-				unless ( $debug ){
+				unless ($debug) {
+					print "creating $slice\n";
 					system($cmd );
-				}else {
-					system( "touch $ofile");
+				}
+				else {
+					system("touch $ofile");
+					print "cmd run ("
+					  . DateTime->now()->time() . "): "
+					  . $cmd . "\n";
 				}
 			}
 		}
 	}
 
-	$pm->finish;               # Terminates the child process
+	$pm->finish;    # Terminates the child process
 }
 
 $pm->wait_all_children;
 
-
 MERGES:
 foreach my $chr (@chrs) {
 	my $pid = $pm->start and next MERGES;
+
 	unless ( $chr =~ m/^chr/ ) {
-		$chr = "chr$chr"; ## we use --add-chrname in the hisat2 call
+		$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
 	}
-	next if ( -f $outpath. $chr ."_". $sampleID. ".sorted.bam"  ); ## the final outfile exists
-	
-	my ( $cmd, $ofile, $ifiles );
-	$ifiles = File::Spec->catfile( $tmp_path, $chr . "_OP_*.bam" );
-	$ofile = File::Spec->catfile( $outpath, $chr ."_". $sampleID. ".sorted.bam" );
-	$cmd =
-	    "samtools merge "
-	  . $ofile
-	  . " $ifiles\n";
-	$cmd .= "if  [ -f $ofile ] \&\&[ -s $ofile ]; ";
-	$cmd .= "then". "\nrm -f $ifiles \nfi\n";
-	  
-	print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
-	if ( !$debug ){
-		system($cmd ) 
+	foreach my $slice ( @{ $chr_splices->{$chr} } ) {
+		next
+		  if ( -f $outpath . $chr . "_" . $sampleID . ".$slice.sorted.bam" )
+		  ;                  ## the final outfile exists
+
+		my ( $cmd, $ofile, $ifiles );
+		$ifiles = File::Spec->catfile( $tmp_path, $chr . "_OP_*$slice.bam" );
+		$ofile =
+		  File::Spec->catfile( $outpath,
+			$chr . "_" . $sampleID . ".$slice.sorted.bam" );
+		$cmd = "samtools merge " . $ofile . " $ifiles\n";
+		$cmd .= "if  [ -f $ofile ] \&\&[ -s $ofile ]; ";
+		$cmd .= "then" . "\nrm -f $ifiles \nfi\n";
+
+		print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
+		if ( !$debug ) {
+			system($cmd );
+		}
 	}
-	$pm->finish; 
+	$pm->finish;
 }
 
 $pm->wait_all_children;
@@ -228,5 +274,8 @@ foreach my $file (@ofiles) {
 my $end = DateTime->now();
 print "(" . $end->time() . "):Finished\n";
 
-print "Duration: " .  join(":",$end->subtract_datetime($start)->in_units('days', 'hours', 'seconds'))  . "\n";
+print "Duration: "
+  . join( ":",
+	$end->subtract_datetime($start)->in_units( 'days', 'hours', 'seconds' ) )
+  . "\n";
 
