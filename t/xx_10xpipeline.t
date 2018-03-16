@@ -14,7 +14,7 @@ my $exec = $plugin_path . "/../bin/10xpipeline.pl";
 ok( -f $exec, 'the script has been found' );
 $outpath = "$plugin_path/data/output/10xpipeline";
 if ( -d $outpath ) {
-	#system("rm -Rf $outpath/*");
+	system("rm -Rf $outpath/*");
 }
 if ( -f "$outpath/sampleX.sqlite") {
 	unlink( "$outpath/sampleX.sqlite" ) ## would otherwise create an error...
@@ -55,6 +55,7 @@ my $cmd =
 . " -fast_tmp ". "$plugin_path/data/output/10xpipeline/fast_tmp"
 . " -outpath " . $outpath 
 . " -sname sampleX"
+. " -local"
 #. " -local" ## I do not wnat to stress the SLURM env - and I do not wnt to detect errors in the thing!
 #. " -debug"
 ;

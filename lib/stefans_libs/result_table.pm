@@ -69,7 +69,7 @@ sub new {
 	my $tmp = $hash->{'filename'};
 	$hash->{'filename'} = undef;
 	$self = data_table->new($hash);
-	foreach ('data_storage_spliced') {
+	foreach ('data_storage_spliced', 'table_path') {
 		$self->{$_} = $hash->{$_};
 	}
 	$self->{'__gene2id__'}      = {};
@@ -519,7 +519,13 @@ sub print2table {
 	$filename ||= $self->{'filename'};
 
 	my $fm = root->filemap($filename);
-	my $outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
+	my $outpath;
+	if ( defined $self->{'table_path'}) {
+		$outpath = File::Spec->catfile( $fm->{'path'}, $self->{'table_path'} );
+	}else {
+		$outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
+	}
+	warn "result_table is exporting to $outpath\n";
 	mkdir($outpath) unless ( -d $outpath );
 	my $ofile;
 

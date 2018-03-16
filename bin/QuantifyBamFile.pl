@@ -191,7 +191,12 @@ else {
 
 }
 my $result = stefans_libs::result_table->new(
-	{ filename => $outfile, 'data_storage_spliced' => 1 } );
+	{
+		filename               => $outfile,
+		'data_storage_spliced' => 1,
+	#	'table_path'           => $drop_chr # not use - might crap things up
+	}
+);
 
 my $start       = time;
 my $first_start = $start;
@@ -201,11 +206,36 @@ if ( defined $drop_chr ) {
 	print "I read the chr "
 	  . $gtf_obj->_checkChr($drop_chr)
 	  . " from the gtf file\n";
-	my $filter = sub {
-		my ( $self, $array, $i ) = @_;
-		return @$array[0] eq $self->{'tmp'};
-	};
-	$gtf_obj->{'tmp'} = $gtf_obj->_checkChr($drop_chr);
+	my $filter;
+	if ( $drop_chr =~ m/(chr[\w\d\.]*):(\d+)-(\d+)/ ) {
+		$gtf_obj->{'tmp_start'} = $2;
+		$gtf_obj->{'tmp_stop'}  = $3;
+		$gtf_obj->{'tmp_chr'}   = $gtf_obj->_checkChr($1);
+
+		warn
+"I am selecting only features in $gtf_obj->{'tmp_chr'}:$gtf_obj->{'tmp_start'}-$gtf_obj->{'tmp_stop'}\n";
+		$filter = sub {
+			my ( $self, $array, $i ) = @_;
+			unless ( defined @$array[0] and @$array[4] ) {
+				warn "on line $i something is not defined: '"
+				  . join( "', '", @$array[ 1, 3, 4 ] ) . "'\n";
+			}
+			return (
+				( @$array[0] eq $self->{'tmp_chr'} )
+				  and ( @$array[3] < $gtf_obj->{'tmp_stop'}
+					and @$array[4] > $gtf_obj->{'tmp_start'} )
+			);
+		};
+
+	}
+	else {
+		$filter = sub {
+			my ( $self, $array, $i ) = @_;
+			return @$array[0] eq $self->{'tmp'};
+		};
+		$gtf_obj->{'tmp'} = $gtf_obj->_checkChr($drop_chr);
+	}
+
 	$gtf_obj->read_file( $gtf_file, $filter );
 }
 else {
@@ -224,7 +254,7 @@ my $quantifer =
 	sub { $_[0] eq $options->{'quantify_on'} } );
 my (
 	@matching_IDs, $N,   $Seq, $sample_name, $sample_table,
-	$sample_row,   $sum, $max, $min, $rem
+	$sample_row,   $sum, $max, $min,         $rem
 );
 
 my $duration = time - $start;
@@ -238,13 +268,13 @@ my ( $OK, @tmp, $reads );
 
 if ( -f $fastqPath . "/.passing_samples.txt" ) {
 	print "using hidden file $fastqPath/.passing_samples.txt\n";
-	open ( IN, "<".$fastqPath . "/.passing_samples.txt") ;
-	while ( <IN> ) {
+	open( IN, "<" . $fastqPath . "/.passing_samples.txt" );
+	while (<IN>) {
 		chomp;
-		@tmp = split( "\t", $_);
+		@tmp = split( "\t", $_ );
 		$OK->{ $tmp[0] } = $tmp[1];
 	}
-	close ( IN );
+	close(IN);
 }
 else {
 	opendir( DIR, $fastqPath )
@@ -269,15 +299,16 @@ else {
 		}
 		close(IN);
 	}
-	if ( ! -f .$fastqPath . "/.passing_samples.txt" ) {
+	if ( !-f . $fastqPath . "/.passing_samples.txt" ) {
 		## an other process might have been faster ;-)
-		open ( OUT , ">".$fastqPath . "/.passing_samples.txt") or die "I could not create the hidden samples file!\n$!\n";
-		foreach (sort keys %$OK ) {
+		open( OUT, ">" . $fastqPath . "/.passing_samples.txt" )
+		  or die "I could not create the hidden samples file!\n$!\n";
+		foreach ( sort keys %$OK ) {
 			print OUT "$_\t$OK->{$_}\n";
 		}
-		close ( OUT );
+		close(OUT);
 	}
-	
+
 }
 $sum = 0;
 map { $sum += $_ } values %$OK;
@@ -418,11 +449,14 @@ sub filter {
 
 	warn "\tAll OK - add it somewhere? " . join( ", ", @matching_IDs ) . "\n"
 	  if ($bugfix);
-	if ( @matching_IDs == 0) {
+	if ( @matching_IDs == 0 ) {
 		## probably the gtf is not correct and the read only overlaps the exon e.g. continues outside the exon?
-		map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g; ## the fist match should be in the exon and overlap to at least 50%
-		#$Seq = ceil($Seq/2);
-		@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] + $Seq );
+		map { $Seq += $_ }
+		  $bam_line[5] =~ m/(\d+)M/g
+		  ;  ## the fist match should be in the exon and overlap to at least 50%
+		     #$Seq = ceil($Seq/2);
+		@matching_IDs =
+		  &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] + $Seq );
 	}
 	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
 		                                   #warn "\tNo matching featuires!\n";
@@ -444,29 +478,35 @@ sub filter {
 
 	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
 	$N            = 0;
-	$rem = 0;
-	map { $N   += $_ } $bam_line[5] =~ m/(\d+)N/g;
-	$Seq          = 0;
+	$rem          = 0;
+	map { $N += $_ } $bam_line[5] =~ m/(\d+)N/g;
+	$Seq = 0;
 	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
-	
+
 	if ( $N > $Seq ) {
 		map { $rem += $_ } $bam_line[5] =~ m/(\d+)M/;
 		## most probably spliced! (?)
 		## So the real match can only be on an element on both ends of the splice
 		$Seq = 0;
 		map { $Seq += $_ } $bam_line[4] =~ m/(\d+)/g;
-		my ($A, $B);
-		@matching_IDs = &lintersect(@matching_IDs,
+		my ( $A, $B );
+		@matching_IDs = &lintersect(
+			@matching_IDs,
 			&get_reporter_ids(
 				$quantifer,
 				$quantifer->efficient_match_chr_position(
-					$bam_line[2], ($bam_line[3] + $N + $rem +1) # 1 bp into the putative next exon.
+					$bam_line[2],
+					( $bam_line[3] +
+						  $N + $rem +
+						  1 )    # 1 bp into the putative next exon.
 				)
 			)
 		);
-		#warn "putative splice event $bam_line[2], $bam_line[3] + $N - $rem\n";
-		#warn "there should be an exon with end ".($bam_line[3]+$rem -1)." and one with start ".($bam_line[3] + $N + $rem)."\n"; 
+
+#warn "putative splice event $bam_line[2], $bam_line[3] + $N - $rem\n";
+#warn "there should be an exon with end ".($bam_line[3]+$rem -1)." and one with start ".($bam_line[3] + $N + $rem)."\n";
 		if ( @matching_IDs > 0 ) {
+
 			#warn "What a matching ID do I have here?:"
 			#  . join( ", ", @matching_IDs ) . "\n";
 			&add_to_summary( $sample_name, \@matching_IDs, 1 );
@@ -1232,10 +1272,12 @@ sub add_to_summary {
 
 sub lintersect {
 	my $h;
+
 	#warn "lintersect gets ".join(", ",@_)."\n";
 	map { $h->{$_}++ } @_;
 	my @ret;
 	map { push( @ret, $_ ) if ( $h->{$_} > 1 ) } keys %$h;
+
 	#warn "And returns ". join(", ",@ret)."\n";
 	return @ret;
 }
