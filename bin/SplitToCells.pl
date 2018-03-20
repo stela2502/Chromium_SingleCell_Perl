@@ -20,13 +20,14 @@
 =head1  SYNOPSIS
 
     SplitToCells.pl
-       -R1       :the R1 fastq file
-       -R2       :the R2 fastq file
-       -I1       :the I1 fastq file
-       -outpath  :the outpath for the sample specific fastq files
-       -split    :if you supply a list of fastq files for each R1 R2 and I1
-                  this data can be summed up in one fastq file (default)
-                  or split into n fastq files using this option
+       -R1          :the R1 fastq file
+       -R2          :the R2 fastq file
+       -I1          :the I1 fastq file
+       -outpath     :the outpath for the sample specific fastq files
+       -split       :if you supply a list of fastq files for each R1 R2 and I1
+                     this data can be summed up in one fastq file (default)
+                     or split into n fastq files using this option
+-filter_low_quality :Filter low quality read parts (by default off OK value 20)
        
        -options  :the options in format key 'value1 value2 value3 ...'
        
@@ -61,7 +62,7 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 my (
-	$help, $debug,   $database, @R1,      @R2,
+	$help, $debug,   $database, @R1,      @R2,   $filter_low_quality,
 	@I1,   $outpath, $options,  @options, $split
 );
 
@@ -72,6 +73,7 @@ Getopt::Long::GetOptions(
 	"-outpath=s"    => \$outpath,
 	"-options=s{,}" => \@options,
 	"-split"        => \$split,
+	"-filter_low_quality=s" => \$filter_low_quality,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -141,6 +143,7 @@ $task_description .= ' -split' if ($split);
 $task_description .= "\n";
 	 $options->{'oname'} = $tmp_oname;
 }
+$task_description .= " -filter_low_quality $filter_low_quality" if ( defined $filter_low_quality);
 
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
@@ -199,6 +202,43 @@ my $filtered_polyT = 0;
 my $flush_counter = 0;
 $| = 1;
 
+sub filter_no_quality_check {
+	my ( $read, $min_length ) = @_;
+
+	$min_length ||= 10;
+
+	## filter polyT at read end
+	if ( $read->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$filtered_polyT++;
+	}
+	if ( $read->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$filtered_polyT++;
+	}
+		
+	## filter reads with high ployX (>= 50%)
+
+	my $str = $read->sequence();
+	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
+		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
+			my $by = 'N' x length($repl);
+			$str =~ s/$repl/$by/;
+		}
+	}
+	my $count = $str =~ tr/N/n/;
+
+	if ( $count != 0 and $count / length($str) > 0.5 ) {
+		return undef;
+	}
+
+	if ( ++ $flush_counter % 10000 == 0 ) {
+		print '.';
+	} 
+	## return filtered read
+
+	return $read;
+}
 
 sub filter_reads {
 	my ( $read, $min_length ) = @_;
@@ -206,16 +246,16 @@ sub filter_reads {
 	$min_length ||= 10;
 
 	## filter polyT at read end
-	if ( $read->sequence() =~ m/([Aa]{9}[Aa]+)$/ ) {
+	if ( $read->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
 		$read->trim( 'end', length( $read->sequence() ) - length($1) );
 		$filtered_polyT++;
 	}
-	if ( $read->sequence() =~ m/([Tt]{9}[Tt]+)$/ ) {
+	if ( $read->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
 		$read->trim( 'end', length( $read->sequence() ) - length($1) );
 		$filtered_polyT++;
 	}
 	
-	$read->filter_low_quality(20); ## throw away crap!
+	$read->filter_low_quality($filter_low_quality); ## throw away crap!
 	
 	## filter reads with high ployX (>= 50%)
 
@@ -267,7 +307,48 @@ my $func = sub {
 	}
 };
 
+my $func_no_Qcheck = sub {
+	my ( $fastqfile, @entries ) = @_;    ## f1, f2, i1
+
+	my $UMI_tag = filter_no_quality_check ( $entries[0] );
+	
+	if ( defined $UMI_tag and length( $UMI_tag->sequence() ) > 50 ) {
+		$entries[0] = $UMI_tag;
+		my $cellid = "S_"
+		  . $entries[2]->sequence() . "_C_"
+		  . substr( $entries[1]->sequence, 0,
+			$options->{'cell_barcode_length'} );
+		$UMI_tag =
+		  substr( $entries[1]->sequence, $options->{'cell_barcode_length'} );
+		$counter->{$cellid}++;
+		$entries[0]->Add_UMI_Tag( $cellid . "_" . $UMI_tag );
+		$entries[0]->write($OUT);
+	}
+	else {
+		$filtered_out++;
+	}
+
+	for ( my $i = 0 ; $i < @entries ; $i++ ) {
+		$entries[$i]->clear();
+	}
+};
 my ( $R1, $R2, $I1 );
+
+sub byFileSize {
+	-s $b <=> -s $a;
+}
+
+
+sub FileSizeOrder {
+	my @files = @_;
+	my $i = 0;
+	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my @ret;
+	foreach ( sort byFileSize @files ) {
+		push( @ret, $order->{$_});
+	}
+	return @ret;
+}
 
 if ($split) {
 	my $worker = stefans_libs::FastqFile->new();
@@ -280,7 +361,11 @@ if ($split) {
 		  "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
 
 		( $R1, $R2, $I1 ) = ( $R1[$i], $R2[$i], $I1[$i] );
-		$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
+		if ( defined $filter_low_quality ) {
+			$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
+		}else {
+			$worker->filter_multiple_files( $func_no_Qcheck, $R2, $R1, $I1 );
+		}
 
 		close($OUT);
 
@@ -312,7 +397,11 @@ else {
 		print "Process file $i R1: '$R1[$i]'\n";
 		
 		( $R1, $R2, $I1 ) = ( $R1[$i], $R2[$i], $I1[$i] );
-		$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
+		if ( defined $filter_low_quality ) {
+			$worker->filter_multiple_files( $func, $R2, $R1, $I1 );
+		}else {
+			$worker->filter_multiple_files( $func_no_Qcheck, $R2, $R1, $I1 );
+		}
 	}
 
 	close($OUT);

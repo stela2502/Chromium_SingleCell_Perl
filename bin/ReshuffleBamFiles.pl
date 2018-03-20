@@ -185,8 +185,24 @@ if ( -f $gtf ) {
 	close(IN);
 }
 
+sub byFileSize {
+	-s $b <=> -s $a;
+}
+
+
+sub FileSizeOrder {
+	my @files = @_;
+	my $i = 0;
+	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my @ret;
+	foreach ( sort byFileSize @files ) {
+		push( @ret, $order->{$_});
+	}
+	return @ret;
+}
+
 FILES:
-foreach my $file (@bams) {
+foreach my $file (sort byFileSize @bams) {
 	my $pid = $pm->start and next FILES;
 	my $fm = root->filemap($file);
 	my ( $cmd, $ofile );
