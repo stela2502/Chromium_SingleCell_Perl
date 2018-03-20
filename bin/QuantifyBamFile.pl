@@ -465,7 +465,7 @@ sub filter {
 	if ( @matching_IDs == 0 ) {
 		## probably the gtf is not correct and the read only overlaps the exon e.g. continues outside the exon?
 		map { $Seq += $_ }
-		  $bam_line[5] =~ m/(\d+)M/g
+		  $bam_line[5] =~ m/(\d+)[NMS]/g
 		  ;  ## the fist match should be in the exon and overlap to at least 50%
 		     #$Seq = ceil($Seq/2);
 		@matching_IDs =
