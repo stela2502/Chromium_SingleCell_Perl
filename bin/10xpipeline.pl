@@ -324,6 +324,7 @@ my $hisat2 =
     "hisat2_run_aurora.pl -files '"
   . join( "' '", @$sumFastqs )
   . "' -outpath $outpath/HISAT2_mapped/"
+  . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
   . " -options n 5 partitition $options->{'p'} A "
   . $options->{'A'};
 my $used = { map { $_ => 1 } qw( n A p N ) };
@@ -608,6 +609,18 @@ sub byFileSize {
 	-s $b <=> -s $a;
 }
 
+
+sub FileSizeOrder {
+	my @files = @_;
+	my $i = 0;
+	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my @ret;
+	foreach ( sort byFileSize @files ) {
+		push( @ret, $order->{$_});
+	}
+	return @ret;
+}
+
 sub getChr_name {
 	my $chr = shift;
 	unless ( defined $avail_chr ) {
@@ -770,6 +783,7 @@ sub SpitCell_CMD {
 	return $cmd;
 }
 
+
 sub SplitToCell_local {
 	my ($SLURM) = @_;
 
@@ -784,7 +798,7 @@ sub SplitToCell_local {
 
 #die "this should fix the path problems::\n \$problems = ".root->print_perl_var_def( $fix ).";\n";
   FILES:
-	for ( my $i = 0 ; $i < @R1 ; $i++ ) {
+	foreach my $i ( &FileSizeOrder(@R2) ) { ## start with the biggest
 		my $pid   = $pm->start and next FILES;
 		my $ofile = $fix->{ $R1[$i] };
 		my $f     = root->filemap( $R1[$i] );
@@ -840,7 +854,7 @@ sub SplitToCell {
 	my $rev = &fix_path_problems()->{33}->{'fix'};
 	my $fix = { map { $rev->{$_} => $_ } keys %$rev };
 
-	for ( my $i = 0 ; $i < @R1 ; $i++ ) {
+	foreach my $i ( &FileSizeOrder(@R2) ) { ## start with the biggest
 		my $ofile = $fix->{ $R1[$i] };
 		my $f     = root->filemap( $R1[$i] );
 
