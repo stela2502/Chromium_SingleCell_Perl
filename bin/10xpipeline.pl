@@ -320,6 +320,7 @@ $start_this = &check_time_since( $start_this,
 #hisat2_run_aurora.pl
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
+
 my $hisat2 =
     "hisat2_run_aurora.pl -files '"
   . join( "' '", @$sumFastqs )

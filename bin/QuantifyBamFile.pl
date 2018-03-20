@@ -29,6 +29,8 @@
        -fastqPath :The path where the original fastq files were converted to the here used input files
        -sampleID  :The sampleID of the 10X sample to process
        
+      -asDatabase :Export the data as database, not tables (default not used)
+      
        -options  : format: key_1 value_1 key_2 value_2 ... key_n value_n
 
            quantify_on: which feature to select for quantification from the gtf file (default 'exon')
@@ -75,9 +77,11 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
+#Lpo start 87806428
+#Mpo end   87804413
 my (
 	$help,    $debug,   $database,  $infile,   $gtf_file, $drop_chr,
-	$outfile, $options, $fastqPath, $sampleID, @options,
+	$outfile, $options, $fastqPath, $sampleID, @options,  $asDatabase
 );
 
 Getopt::Long::GetOptions(
@@ -88,6 +92,7 @@ Getopt::Long::GetOptions(
 	"-drop_chr=s"   => \$drop_chr,
 	"-fastqPath=s"  => \$fastqPath,
 	"-sampleID=s"   => \$sampleID,
+	"-asDatabase"   => \$asDatabase,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -95,8 +100,6 @@ Getopt::Long::GetOptions(
 
 my $warn  = '';
 my $error = '';
-
-my $bugfix = 0;
 
 unless ( defined $infile ) {
 	$error .= "the cmd line switch -infile is undefined!\n";
@@ -146,6 +149,7 @@ $task_description .= ' -options "' . join( '" "', @options ) . '"'
 $task_description .= ' -fastqPath ' . $fastqPath;
 $task_description .= ' -drop_chr ' . $drop_chr if ( defined $drop_chr );
 $task_description .= ' -sampleID ' . $sampleID;
+$task_description .= ' -asDatabase' if ($asDatabase);
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -188,13 +192,19 @@ if ($debug) {
 }
 else {
 	$outfile .= ".sqlite" unless ( $outfile =~ m/\.sqlite$/ );
-
 }
+
+if ( -f $outfile ) {
+	warn
+"I am going to add data to the outfile '$outfile'\nremove this file if you want to recreate it.\n";
+}
+
 my $result = stefans_libs::result_table->new(
 	{
 		filename               => $outfile,
 		'data_storage_spliced' => 1,
-	#	'table_path'           => $drop_chr # not use - might crap things up
+
+		#	'table_path'           => $drop_chr # not use - might crap things up
 	}
 );
 
@@ -249,12 +259,15 @@ if ( $gtf_obj->Lines() == 0 ) {
 	  . "' - useless aprocess.\n";
 }
 
+my $bugfix = 0;
+$gtf_obj->{'debug'} = 0;
 my $quantifer =
   $gtf_obj->select_where( 'feature',
 	sub { $_[0] eq $options->{'quantify_on'} } );
 my (
-	@matching_IDs, $N,   $Seq, $sample_name, $sample_table,
-	$sample_row,   $sum, $max, $min,         $rem
+	@matching_IDs, @matching_IDs2, $N,          $Seq,
+	$sample_name,  $sample_table,  $sample_row, $sum,
+	$max,          $min,           $rem
 );
 
 my $duration = time - $start;
@@ -472,7 +485,7 @@ sub filter {
 
 		warn "\tNo a UMI duplicate ($UMI)\n" if ($bugfix);
 
-		#		return;
+		return if $self->{'UMI'}->{$sample_name}->{$UMI};
 	}    ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
 
@@ -490,7 +503,7 @@ sub filter {
 		$Seq = 0;
 		map { $Seq += $_ } $bam_line[4] =~ m/(\d+)/g;
 		my ( $A, $B );
-		@matching_IDs = &lintersect(
+		@matching_IDs2 = &lintersect(
 			@matching_IDs,
 			&get_reporter_ids(
 				$quantifer,
@@ -505,11 +518,15 @@ sub filter {
 
 #warn "putative splice event $bam_line[2], $bam_line[3] + $N - $rem\n";
 #warn "there should be an exon with end ".($bam_line[3]+$rem -1)." and one with start ".($bam_line[3] + $N + $rem)."\n";
-		if ( @matching_IDs > 0 ) {
+		if ( @matching_IDs2 > 0 ) {
 
-			#warn "What a matching ID do I have here?:"
+			warn "Splice event: instead of matching-ids ("
+			  . join( ", ", @matching_IDs )
+			  . ") I now have matching_IDs2 ("
+			  . join( ", ", @matching_IDs2 ) . ")\n";
+
 			#  . join( ", ", @matching_IDs ) . "\n";
-			&add_to_summary( $sample_name, \@matching_IDs, 1 );
+			&add_to_summary( $sample_name, \@matching_IDs2, 1 );
 		}
 	}
 	else {
@@ -543,8 +560,12 @@ unless ($debug) {    ## debugging the 10x pipeline here
 	  . "%)\n";
 
 ##And here is where I stop the whole process this time as all other steps can be done in R.
-
-	$result->print2table();
+	if ($asDatabase) {
+		$result->print2file( undef, 950 );
+	}
+	else {
+		$result->print2table( undef, 950 );
+	}
 }
 else {
 	## as a very short cut I will just create some fake data in the outfiles
@@ -910,12 +931,13 @@ sub get_matching_ids {
 	my ( $gtf, $chr, $start ) = @_;
 	my ( @IDS, $nextID );
 	unless ( $self->{'chr'} eq $chr ) {
-		$self->{'chr'} = $chr;
-		$self->{'end'} = 0;
-
-		#$self->{'skip_to_next_chr'} = 0;
+		$self->{'chr'}        = $chr;
+		$self->{'end'}        = 0;
+		$self->{'next_start'} = 0;
+		$self->{'skip'}       = '-not-a-chr-';
 		&reinit_UMI();
 	}
+	return () if ( $self->{'skip'} eq $chr );
 
 #return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
 	if ( $self->{'end'} <= $start and $start < $self->{'next_start'} ) {
@@ -928,30 +950,39 @@ sub get_matching_ids {
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
 		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
+		if ( scalar(@IDS) == 1 and !defined $IDS[0] ) {
+			## useless chr!
+			$self->{'skip'} = $chr;
+			return ();
+		}
 		my ( $match, $next, @OK, $lastOK, @starts, @ends );
 		@starts = &get_chr_start_4_ids( $gtf, @IDS );
-		@ends          = &get_chr_end_4_ids( $gtf, @IDS );
-		$lastOK        = 0;
-		$self->{'end'} = 0;
-		map {
-
-			if ( $starts[$_] < $start and $ends[$_] > $start ) {
+		@ends = &get_chr_end_4_ids( $gtf, @IDS );
+		$lastOK = 0;
+		$self->{'end'} = $start;    ## we work on ordered reads hence this is OK
+		$self->{'next_start'} = undef;
+		for ( my $i = 0 ; $i < scalar(@IDS) ; $i++ )
+		{    # @IDs also conatin the next entry after all matching ones!
+			
+			if ( $starts[$i] <= $start and $ends[$i] > $start ) {
 				## matching
-				push( @OK, $IDS[$_] );
-				$self->{'end'} ||= $ends[$_];
-				$self->{'end'} = $ends[$_] if ( $ends[$_] < $self->{'end'} );
-				$lastOK = 1;
+				warn "\tAnd I get a match!\n";
+				push( @OK, $IDS[$1] );
+				$self->{'end'} = $ends[$i];
 			}
-			elsif ( $lastOK == 1 and $starts[$_] > $start ) {
-				$self->{'next_start'} = $starts[$_];
-				$lastOK = 0;
+			if ( $starts[$i] > $start ) {
+				$self->{'next_start'} = $starts[$i];
 			}
-		} 0 .. ( scalar(@IDS) - 1 );
+		}
+		## so if I am not totally missguided we should have some values now:
+		$self->{'next_start'} ||= $starts[$#starts];
+
 		@starts = @ends = undef;
-		warn "I have identified the matching IDS as "
-		  . join( ", ", @OK )
-		  . " and the next start as $self->{'next_start'}\n"
-		  if ($bugfix);
+#		if ( $bugfix and scalar( @OK > 0 ) ) {
+#			## seams to be fixed!
+#			die "If all is OK I now sould have a $self->{'end'} that is at least the $start and a $self->{'next_start'} for the next possible exon.\n"
+#			  . "I got these matches for $start OK(".join(", ",@OK)."):\n" . join( "\n",	map { join( "\t", @{@{ $gtf->{'data'} }[$_]} ) } @IDS ) . "\n";
+#		}
 
 		@IDS = @OK;
 	}
@@ -1227,8 +1258,9 @@ sub add_to_summary {
 	my ( $sampleID, $geneIDs, $is_spliced ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
-	warn
-	  "\tI add to sample $sampleID and gene $geneIDs is_splice==$is_spliced\n"
+	warn "\tI add to sample $sampleID and gene "
+	  . join( ",", @$geneIDs )
+	  . " is_splice==$is_spliced\n"
 	  if ($bugfix);
 
 	#$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
@@ -1249,23 +1281,19 @@ sub add_to_summary {
 				1
 			);      ## add to existing values
 		}
-		else {
-			$result->AddDataset(
-				{
-					'Gene_ID'   => $gene_id,
-					'Sample_ID' => $sampleID,
-					'value'     => 1
-				},
-				1
-			);      ## add to existing values
-		}
 	}
 
 	# this is a horrible performance killer!
 	if ( $result->Lines() > 1000 ) {
 		## Ok we shurely can store - say 50 of them in the database and get rid of the data here - or?
 		print "I am storing 1950 gene results in the tables\n";
-		$result->print2table( undef, 950 );
+		if ($asDatabase) {
+			$result->print2file( undef, 950 );
+		}
+		else {
+			$result->print2table( undef, 950 );
+		}
+
 	}
 
 }
@@ -1314,17 +1342,22 @@ sub lmin {
 
 sub get_chr_end_4_ids {
 	my ( $gtf, @lines ) = @_;
-	return unless ( scalar(@lines) );
-	return map {
+	return unless ( scalar(@lines) and defined $lines[0] );
+	my @ret = map {
 		if ( defined $_ ) {
 			@{ @{ $gtf->{'data'} }[$_] }[ $gtf->Header_Position('end') ];
 		}
 	} @lines;
+
+#	die "the column "
+#	 . $gtf->Header_Position('end'). " using ".scalar(@lines)." interesting features "
+#	 . " In the gtf file should contain the end position of the feature - right?\nlines: ". join(", ",@lines)."\nto ends:".join(", ",@ret)."\n";
+	return @ret;
 }
 
 sub get_chr_start_4_ids {
 	my ( $gtf, @lines ) = @_;
-	return unless ( scalar(@lines) );
+	return unless ( scalar(@lines) and defined $lines[0] );
 	return map {
 		if ( defined $_ ) {
 			@{ @{ $gtf->{'data'} }[$_] }[ $gtf->Header_Position('start') ];

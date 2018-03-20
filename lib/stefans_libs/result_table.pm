@@ -78,6 +78,7 @@ sub new {
 	$self->{'__lastSampleID__'} = 0;
 	$self->{'__lastGeneID__'}   = 0;
 	$self->{'__lastDataID__'}   = 0;
+	$self->{'dynamic'} = 1; ## if set to 0 the prepare functions will not remove the data from the object
 
 	bless $self, $class if ( $class eq "stefans_libs::result_table" );
 
@@ -581,7 +582,7 @@ sub print2file {
 		$batch->batch_import( $obj->{'samples'}, $samples );
 	}
 
-	$data = $self->prepare_data_table($lines, my $save=1);
+	$data = $self->prepare_data_table($lines);
 
 	if ( $data->Lines() > 0 ) {
 		$batch->batch_import( $obj, $data );
@@ -606,7 +607,7 @@ sub prepare_gene_table {
 
 	  } @{ $self->GetAsArray('Gene_ID') }
 	  ;    ## only if the data is not already in the database
-	if ( $genes->Lines() > 0 ) {
+	if ( $genes->Lines() > 0 and $self->{'dynamic'} ) {
 		$self->{'__lastGeneID__'} = scalar( keys %{ $self->{'__gene2id__'} } );
 	}
 	return $genes;
@@ -631,7 +632,7 @@ sub prepare_sample_table {
 
 	} grep { !/Gene_ID/ } @{ $self->{'header'} };
 	;    ## only if the data is not already in the database
-	if ( $samples->Lines() > 0 ) {
+	if ( $samples->Lines() > 0  and $self->{'dynamic'} ) {
 		$self->{'__lastSampleID__'} =
 		  scalar( keys %{ $self->{'__sample2id__'} } );
 	}
@@ -641,7 +642,7 @@ sub prepare_sample_table {
 sub prepare_data_table {
 	my ( $self, $lines, $save ) = @_;
 	my $data = data_table->new();
-	$save ||= 0;
+	$save ||= ! $self->{'dynamic'};
 
 	my ( $gene_id, @store );
 

@@ -168,7 +168,7 @@ if ( -f $gtf ) {
 			. " -gtf  $gtf"
 			. " -coverage $coverage" 
 			. " -outfile $outpath/chr_splits.txt"
-			. " -step 10000000";
+			. " -step 5000000";
 		print $cmd;
 		system( $cmd );
 	}
@@ -287,6 +287,9 @@ $pm->wait_all_children;
 foreach my $file (@ofiles) {
 	unlink($file);
 }
+
+## now I have some that are extremely big - they slow down the whole process..
+
 my $end = DateTime->now();
 print "(" . $end->time() . "):Finished\n";
 
