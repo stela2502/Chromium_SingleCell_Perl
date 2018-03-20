@@ -181,11 +181,6 @@ print LOG $task_description . "\n";
 
 ## Do whatever you want!
 
-die "Please make sure, that the samle names are really stored correctly:\n".
- "When comparing the samples I get Mpo positive in the Seurat data to the samplenames "
- ."I get in my analysis (Ctrl_LSK) I not only get only 100 instead of 400 samples, but only 22 samples overlapp."
- . "this translates into: 'My script might shuffle the sample names' <- Make really sure, that this is not the case!!\n";
-
 my $bam_file = stefans_libs::BAMfile->new();
 if ($debug) {
 	$outfile .= "_FAKE_DEBUG.sqlite"
