@@ -277,7 +277,7 @@ $options->{'t'} ||= '02:00:00';
 
 my $SLURM       = stefans_libs::SLURM->new( $options, 0 );
 my $SLURM_local = stefans_libs::SLURM->new( $options, 0 );
-$SLURM_local->{'run_local'} = 1;
+$SLURM_local->{'local'} = 1;
 
 my $slurmOptions;
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
@@ -342,19 +342,20 @@ print "we start the hist2 mapping process:\n" . $hisat2 . "\n";
 
 #die "First make sure we got all files!\n";
 
-system("rm $outpath/hisat2_run.local*");
+map { unlink($_) } get_files_from_path( $outpath, "hisat2_run.local\\d*.out", "hisat2_run.local\\d*.err" );
 
 $SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
 ## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/hisat2_run<PID>.err and $outpath/hisat2_run<PID>.out file
 
 ## Identify the run ids we need to wait for:
 
-my @tmp = get_files_from_path( $outpath, "hisat2_run.local.*out" );
+my @tmp = get_files_from_path( $outpath, "hisat2_run.local\\d*.out" );
+#Carp::confess("I did not get a usable hisat out file? $tmp[0]\n");
 unless ( -f $tmp[0] ) {
-	Carp::confess("I did not get a usable hisat out file: '$tmp[0]'\n");
+	Carp::confess("I did not get a usable hisat out file!\n");
 }
 open( RUN, $tmp[0] )
-  or die "I could not oopen the hisat2_runaurora stdout file '$tmp[0]'\n$!\n";
+  or die "I could not open the hisat2_runaurora stdout file '$tmp[0]'\n$!\n";
 
 $SLURM_ids = [];
 foreach (<RUN>) {
@@ -505,21 +506,7 @@ print "n10xpipeline.pl total run time: "
 
 sub get_files_from_path {
 	my ( $path, @matches ) = @_;
-	opendir( DIR, $path )
-	  or die "I could not read from the directory '$path'\n$!\n";
-	my @dat = grep { !/^\./ } readdir(DIR);
-	closedir(DIR);
-	print "I get files from path '$path'\n";
-	foreach my $select (@matches) {
-
-		print "I select all files matching '$select'\n"
-		  . join( "\n", @dat ) . "\n";
-		@dat = grep { /$select/ } @dat;
-
-		print "Still in the game:" . join( "\n", @dat ) . "\n\n";
-	}
-	@dat = map { "$path/$_" } @dat;
-	return @dat;
+	return $SLURM->get_files_from_path($path, @matches);
 }
 
 =head3 check_time_since ( $start_last, $msg )
