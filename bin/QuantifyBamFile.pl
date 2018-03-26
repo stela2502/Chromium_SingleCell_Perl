@@ -40,6 +40,7 @@
 
        -help           :print this help
        -debug          :verbose output
+       -bugfix         :extremely verbose output all data created
    
 =head1 DESCRIPTION
 
@@ -81,7 +82,7 @@ my $VERSION = 'v1.0';
 #Mpo end   87804413
 my (
 	$help,    $debug,   $database,  $infile,   $gtf_file, $drop_chr,
-	$outfile, $options, $fastqPath, $sampleID, @options,  $asDatabase
+	$outfile, $options, $fastqPath, $sampleID, @options,  $asDatabase, $bugfix
 );
 
 Getopt::Long::GetOptions(
@@ -93,6 +94,7 @@ Getopt::Long::GetOptions(
 	"-fastqPath=s"  => \$fastqPath,
 	"-sampleID=s"   => \$sampleID,
 	"-asDatabase"   => \$asDatabase,
+	"-bugfix"       => \$bugfix,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -150,6 +152,7 @@ $task_description .= ' -fastqPath ' . $fastqPath;
 $task_description .= ' -drop_chr ' . $drop_chr if ( defined $drop_chr );
 $task_description .= ' -sampleID ' . $sampleID;
 $task_description .= ' -asDatabase' if ($asDatabase);
+$task_description .= ' -bugfix' if ($bugfix);
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -183,6 +186,7 @@ mkdir( $fm->{'path'} ) unless ( -d $fm->{'path'} );
 open( LOG, ">$outfile.log" ) or die $!;
 print LOG $task_description . "\n";
 
+print "I am processing file '$infile'\n";
 ## Do whatever you want!
 
 my $bam_file = stefans_libs::BAMfile->new();
@@ -259,9 +263,11 @@ if ( $gtf_obj->Lines() == 0 ) {
 	  . "' - useless aprocess.\n";
 }
 
-my $bugfix = 0;
-$gtf_obj->{'debug'} = 0;
-my $quantifer =
+$gtf_obj->{'debug'} = $debug;
+
+$gtf_obj -> GeneFreeSplits(); ## define the gene free splits in order to keep problems with missing genes as low as possible.
+
+$gtf_obj =
   $gtf_obj->select_where( 'feature',
 	sub { $_[0] eq $options->{'quantify_on'} } );
 my (
@@ -406,7 +412,12 @@ sub sample_and_umi_cellranger {
 
 		#$sample_name = $1 if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/);
 		$sample_name = $1 if ( $_ =~ m/CR:Z:([AGCTN]+)$/ );
-		$UMI         = $1 if ( $_ =~ m/UR:Z:([ACTGN]+)$/ );
+		if ( $_ =~ m/UR:Z:([ACTGN]+)$/ ){
+			$UMI  = $1 ;
+		}elsif ( $_ =~ m/UB:Z:([ACTGN]+)$/ ) {
+			$UMI  = $1 ;
+		}
+		
 	}
 	return ( $sample_name, $UMI );
 }
@@ -454,25 +465,30 @@ sub filter {
 		@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
 	}
 
+	#next if ( $bugfix and $bam_line[3] == $self->{'last_start'});
 	warn
 	  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n"
 	  if ($bugfix);
 	## start with the real matching
-	@matching_IDs = &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] );
+	@matching_IDs = &get_matching_ids( $gtf_obj, $bam_line[2], $bam_line[3],  1 ); ## 1 == update
 
-	warn "\tAll OK - add it somewhere? " . join( ", ", @matching_IDs ) . "\n"
-	  if ($bugfix);
 	if ( @matching_IDs == 0 ) {
 		## probably the gtf is not correct and the read only overlaps the exon e.g. continues outside the exon?
+		$Seq = 0;
 		map { $Seq += $_ }
 		  $bam_line[5] =~ m/(\d+)[NMS]/g
 		  ;  ## the fist match should be in the exon and overlap to at least 50%
 		     #$Seq = ceil($Seq/2);
 		@matching_IDs =
-		  &get_matching_ids( $quantifer, $bam_line[2], $bam_line[3] + $Seq );
+		  &get_matching_ids( $gtf_obj, $bam_line[2], $bam_line[3] + $Seq ); ## do not update!
+	#	warn
+	#  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3] and ".($bam_line[3] + $Seq)."\n"
 	}
+
+	warn "\tGot a matching ID? " . join( ", ", @matching_IDs ) . "\n"
+	  if ($bugfix);
 	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
-		                                   #warn "\tNo matching featuires!\n";
+		warn "\tNo matching featuires!\n" if ($bugfix);
 		return;
 	}
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
@@ -489,9 +505,11 @@ sub filter {
 	}    ## the sample specific UMIs will lead to a merge of the samples
 	##and therefore I should not add more than one UMI per exon
 
-	@matching_IDs = &get_reporter_ids( $quantifer, @matching_IDs );
-	$N            = 0;
-	$rem          = 0;
+	@matching_IDs = &get_reporter_ids( $gtf_obj, @matching_IDs );
+
+#Carp::confess ("get_reporter_ids $bam_line[2], $bam_line[3],".($bam_line[3] + $Seq)." got the IDs:".join(", ",@matching_IDs)."\nand will not match to a new id untill $self->{'end'}\n");
+	$N   = 0;
+	$rem = 0;
 	map { $N += $_ } $bam_line[5] =~ m/(\d+)N/g;
 	$Seq = 0;
 	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
@@ -506,8 +524,8 @@ sub filter {
 		@matching_IDs2 = &lintersect(
 			@matching_IDs,
 			&get_reporter_ids(
-				$quantifer,
-				$quantifer->efficient_match_chr_position(
+				$gtf_obj,
+				$gtf_obj->efficient_match_chr_position(
 					$bam_line[2],
 					( $bam_line[3] +
 						  $N + $rem +
@@ -523,14 +541,17 @@ sub filter {
 			warn "Splice event: instead of matching-ids ("
 			  . join( ", ", @matching_IDs )
 			  . ") I now have matching_IDs2 ("
-			  . join( ", ", @matching_IDs2 ) . ")\n";
+			  . join( ", ", @matching_IDs2 ) . ")\n" if ( $bugfix );
 
 			#  . join( ", ", @matching_IDs ) . "\n";
-			&add_to_summary( $sample_name, \@matching_IDs2, 1 );
+			&add_to_summary( $sample_name, \@matching_IDs2, 1, "$bam_line[3]..".($bam_line[3]+$rem). " and $bam_line[5]" );
 		}
 	}
 	else {
-		&add_to_summary( $sample_name, \@matching_IDs, 0 );
+		if ( $matching_IDs[0] eq "Lpo" ) {
+			warn "putative crap $matching_IDs[0] with start $bam_line[3] and $bam_line[5]?\n";
+		}
+		&add_to_summary( $sample_name, \@matching_IDs, 0, "$bam_line[3] and $bam_line[5]" );
 	}
 
 }
@@ -607,8 +628,7 @@ exit(1);
 #print "drop me 1". $result->AsString();
 ## now I can drop the quantifier and the gff
 
-$quantifer = undef;
-$gtf_obj   = undef;
+$gtf_obj = undef;
 
 ### done with the quantification - now the error check starts
 
@@ -928,24 +948,32 @@ print "Done\n";
 close(LOG);
 
 sub get_matching_ids {
-	my ( $gtf, $chr, $start ) = @_;
+	my ( $gtf, $chr, $start, $update ) = @_;
 	my ( @IDS, $nextID );
 	unless ( $self->{'chr'} eq $chr ) {
 		$self->{'chr'}        = $chr;
 		$self->{'end'}        = 0;
 		$self->{'next_start'} = 0;
 		$self->{'skip'}       = '-not-a-chr-';
+		$self->{'last_start'} = 0;
 		&reinit_UMI();
+		warn "Quant init chr $chr\n" if ($bugfix);
 	}
+	if ( $self->{'last_start'} > $start ) {
+		## shit - that should not be possible!
+		## better save than sorry:
+		warn "reinit end and next_start\n";
+		$self->{'end'} = $self->{'next_start'} = 0;
+	}
+	$self->{'last_start'} = $start if ( $update );
 	return () if ( $self->{'skip'} eq $chr );
-
-#return if ( $self->{'skip_to_next_chr'} ); # we would not have annotations anyhow...
-	if ( $self->{'end'} <= $start and $start < $self->{'next_start'} ) {
+	if ( $self->{'end'} < $start and $start < $self->{'next_start'} ) {
 		warn "get_matching_ids intergenic - return\n" if ($bugfix);
 		return ();
 	}
 	if ( $self->{'end'} <= $start ) {    # match to a new feature
-		warn "get_matching_ids end < start ($self->{'end'} < $start)\n"
+		warn
+"Do a new match : get_matching_ids end < start ($self->{'end'} < $start)\n"
 		  if ($bugfix);
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
@@ -959,36 +987,61 @@ sub get_matching_ids {
 		@starts = &get_chr_start_4_ids( $gtf, @IDS );
 		@ends = &get_chr_end_4_ids( $gtf, @IDS );
 		$lastOK = 0;
-		$self->{'end'} = $start;    ## we work on ordered reads hence this is OK
-		$self->{'next_start'} = undef;
-		for ( my $i = 0 ; $i < scalar(@IDS) ; $i++ )
-		{    # @IDs also conatin the next entry after all matching ones!
-			
-			if ( $starts[$i] <= $start and $ends[$i] > $start ) {
-				## matching
-				warn "\tAnd I get a match!\n";
-				push( @OK, $IDS[$1] );
-				$self->{'end'} = $ends[$i];
+		if ($update) {
+			$self->{'end'} =
+			  $start;    ## we work on ordered reads hence this is OK
+			$self->{'next_start'} = undef;
+			for ( my $i = 0 ; $i < scalar(@IDS) ; $i++ )
+			{    # @IDs also conatin the next entry after all matching ones!
+				if ( $starts[$i] <= $start and $ends[$i] >= $start ) {
+					## matching
+					#warn "\tAnd I get a match!\n";
+					push( @OK, $IDS[$i] );
+					$self->{'end'} = $ends[$i];
+				}
+				if ( $starts[$i] > $start ) {
+					$self->{'next_start'} = $starts[$i];
+				}
 			}
-			if ( $starts[$i] > $start ) {
-				$self->{'next_start'} = $starts[$i];
+			## so if I am not totally missguided we should have some values now:
+			$self->{'next_start'} ||= $starts[$#starts];
+		}
+		else {       ## no update
+			for ( my $i = 0 ; $i < scalar(@IDS) ; $i++ )
+			{    # @IDs also conatin the next entry after all matching ones!
+				if ( $starts[$i] <= $start and $ends[$i] >= $start ) {
+					## matching
+					push( @OK, $IDS[$i] );
+				}
 			}
 		}
-		## so if I am not totally missguided we should have some values now:
-		$self->{'next_start'} ||= $starts[$#starts];
+		if ( !defined $self->{'next_start'} ){
+			## OK that can only mean, that with this mapper there are no new entries untill the next chr mapper would be used.
+			my $chr_id = $gtf->get_chr_subID_4_start($chr, $start);
+			$self->{'next_start'} = @{ @{ $gtf->{'__GeneFreeSplits__'} }[$chr_id] }[ 2 ]; # the end of the area covered by the mapper.
+		}
 
 		@starts = @ends = undef;
-#		if ( $bugfix and scalar( @OK > 0 ) ) {
-#			## seams to be fixed!
-#			die "If all is OK I now sould have a $self->{'end'} that is at least the $start and a $self->{'next_start'} for the next possible exon.\n"
-#			  . "I got these matches for $start OK(".join(", ",@OK)."):\n" . join( "\n",	map { join( "\t", @{@{ $gtf->{'data'} }[$_]} ) } @IDS ) . "\n";
-#		}
+		if ( $bugfix and scalar( @IDS == 0 ) ) {
+
+			#			## seams to be fixed!
+			warn
+"If all is OK I now should have a $self->{'end'} that is at least the $start ("
+			  . ( $self->{'end'} - $start )
+			  . ") and a $self->{'next_start'} for the next possible exon.\n"
+			  . "I got these matches for $start OK("
+			  . join( ", ", @OK ) . "):\n"
+			  . join( "\n",
+				map { join( "\t", @{ @{ $gtf->{'data'} }[$_] } ) } @IDS )
+			  . "\n";
+		}
 
 		@IDS = @OK;
 	}
 	elsif ( $start < $self->{'end'} ) {
 		warn
 "\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n"
+		  . join( "\n", @{ $self->{'last_IDS'} } ) . "\n"
 		  if ($bugfix);
 		@IDS = @{ $self->{'last_IDS'} };
 	}
@@ -1000,7 +1053,7 @@ sub get_matching_ids {
 	else {
 		die "I assume I should never get here!?\n";
 	}
-	$self->{'last_IDS'} = \@IDS;
+	$self->{'last_IDS'} = [@IDS];
 	return @IDS;
 }
 
@@ -1255,9 +1308,12 @@ sub merge_cells {
 }
 
 sub add_to_summary {
-	my ( $sampleID, $geneIDs, $is_spliced ) = @_;
+	my ( $sampleID, $geneIDs, $is_spliced, $start ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
+#	print "\tI add to sample $sampleID and gene "
+#	  . join( ",", @$geneIDs )
+#	  . " is_splice==$is_spliced $start\n";
 	warn "\tI add to sample $sampleID and gene "
 	  . join( ",", @$geneIDs )
 	  . " is_splice==$is_spliced\n"
@@ -1367,6 +1423,7 @@ sub get_chr_start_4_ids {
 
 sub get_reporter_ids {
 	my ( $gtf, @lines ) = @_;
+	return unless ( scalar(@lines) and defined $lines[0] );
 	return &unique(
 		map {
 			@{ @{ $gtf->{'data'} }[$_] }
