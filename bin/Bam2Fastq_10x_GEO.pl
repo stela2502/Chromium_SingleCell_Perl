@@ -26,8 +26,11 @@
 
     Bam2Fastq_10x_GEO.pl
        -infiless       :a input SRA or bam file downloaded from NCBI GEO containing 10x data
-       -outfile      :the output fastq file
+       -outpath        :the outpath
 
+       -options:       A list of 'key' 'value' combinations
+       
+           sname  :the prefix for the outfile
 
        -help           :print this help
        -debug          :verbose output
@@ -73,7 +76,7 @@ unless ( -f $infiles[0]) {
 	$error .= "the cmd line switch -infiles is undefined!\n";
 }
 unless ( defined $outpath) {
-	$error .= "the cmd line switch -outfile is undefined!\n";
+	$error .= "the cmd line switch -outpath is undefined!\n";
 }
 
 unless ( defined $options[0] ) {
@@ -131,22 +134,31 @@ close(LOG);
 
 ## Do whatever you want!
 
-my ( $counter, $OUT, $filtered_out);
+my ( $counter, $OUT, $filtered_out, $total_reads);
 
 sub sample_and_umi_cellranger {
 	my (@bam_line) = @_;
 	my ( $sample_name, $UMI );
+	#print join("\t", @bam_line )."\n";
 	foreach (@bam_line) {
-
+		if (scalar( split(":", $_)) == 3 ) {
+			#print "\t$_";
+		}else {
+			next;
+		}
 		#$sample_name = $1 if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/);
-		$sample_name = $1 if ( $_ =~ m/CR:Z:([AGCTN]+)$/ );
-		if ( $_ =~ m/UR:Z:([ACTGN]+)$/ ){
-			$UMI  = $1 ;
-		}elsif ( $_ =~ m/UB:Z:([ACTGN]+)$/ ) {
+		if ( $_ =~ m/C[BR]:Z:([AGCTN]+)-?\d*$/ ){
+			#print "Matching to sample $_\n";
+			$sample_name = $1 ;
+		}
+		#$sample_name = $1 if ( $_ =~ m/CB:Z:([AGCTN]+)$/ );
+		if ( $_ =~ m/U[BR]:Z:([ACTGN]+)$/ and ! defined $UMI){
+			#print "Matching UMI $_\n";
 			$UMI  = $1 ;
 		}
 		
 	}
+	#print "\n";
 	return ( $sample_name, $UMI );
 }
 my ( $sample_name, $UMI, $entry );
@@ -163,18 +175,21 @@ sub filter {
 	shift; ## get rid of the BAMfile object
 	my @bam_line = split( "\t", shift );
 	return if ( $bam_line[0] =~ m/^\@/ );
-	
+	$total_reads ++;
 	( $sample_name, $UMI ) = &sample_and_umi_cellranger( @bam_line );
 	
 	if ( defined $UMI and defined $sample_name ) {
+		#print "process next line and got '$sample_name' and '$UMI'\n";
 		$entry->clear();
 		$counter->{$sample_name}++;
 		$entry->name ( "$bam_line[0]:".join("_", 'C','ACGT','C',$sample_name,$UMI));
 		$entry->sequence($bam_line[9]);
 		$entry->quality($bam_line[10]);
 		$entry->write($OUT);
+		last FILTER if ( $debug );
 	}
 	else {
+		#print "No UMI and sampleID\n";
 		$filtered_out++;
 	}
 
@@ -195,6 +210,12 @@ sub FileSizeOrder {
 	}
 	return @ret;
 }
+
+if ( -t STDOUT ) {
+	$| = 1;
+}
+
+
 my ($ofile);
 $entry = stefans_libs::FastqFile::FastqEntry->new();
 print "Started a summary run on ".scalar(@infiles)." file sets\n";
@@ -216,11 +237,16 @@ print "Started a summary run on ".scalar(@infiles)." file sets\n";
 	open( OUT, ">$outpath/$options->{'oname'}.per_cell_read_count.xls" )
 	  or die
 "I could not open the file '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n$!\n";
+	print OUT "#total of $total_reads reads processed\n";
 	print OUT "#no sample/UMI information in $filtered_out reads\n";
 	print OUT "Cell_ID\tcount\n";
 	foreach my $key ( sort keys %$counter ) {
 		print OUT "$key\t$counter->{$key}\n";
 	}
 	close(OUT);
+	print "Finished with fastq file '$ofile'\n";
+	print "A total of $total_reads reads were processed\n";
+	print "and $filtered_out reads had no sample/UMI information and were filtered out\n";
+	print sprintf("%.3f",(($total_reads - $filtered_out)/ $total_reads ) * 100 )."% reads could be used\n";
 	
 
