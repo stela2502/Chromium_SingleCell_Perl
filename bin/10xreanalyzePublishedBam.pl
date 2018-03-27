@@ -491,6 +491,7 @@ sub QuantifyBamFile_CMD {
 	}
 	my @tmp = split( /chr/, $chr_slice );
 	$chr_slice = 'chr' . pop(@tmp);
+	$chr_slice =~ s/:/_/g;
 	my $opath = "$fast_tmp/$chr_slice" . "_$sname";
 	$opath =~ s/\./_/g;
 	$opath .= "_$fm->{'filename_base'}";
