@@ -359,7 +359,7 @@ open( RUN, $tmp[0] )
 
 $SLURM_ids = [];
 foreach (<RUN>) {
-	if ( $_ = /Submitted batch job (\d+)/ ) {
+	if ( $_ = /Submitted batch job '?(\d+)'?/ ) {
 		push( @$SLURM_ids, $1 );
 	}
 }
