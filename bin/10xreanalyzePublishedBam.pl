@@ -690,14 +690,12 @@ sub fix_path_problems {
 }
 
 sub SpitCell_CMD {
-	my ( $R1, $R2, $I1, $fast_tmp, $ofile ) = @_;
-	Carp::confess ( "Fix me - I need to call Bam2Fastq_10x_GEO.pl" );
-	my $cmd = 'SplitToCells.pl';
-	$cmd .= " -I1 $I1";
-	$cmd .= " -R1 $R1";
-	$cmd .= " -R2 $R2";
+	my ( $bam, $fast_tmp, $ofile ) = @_;
+	my $cmd = 'Bam2Fastq_10x_GEO.pl';
+	$cmd .= " -infiles $bam";
 	$cmd .= " -outpath $fast_tmp";
-	$cmd .= " -options oname $ofile" . $slurmOptions;
+	$cmd .= " -options oname $ofile". $slurmOptions;
+	$cmd .= " -debug" if ( $debug );
 	$cmd .= "\nmv $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
 	$cmd .= "\nmv $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
 	$cmd .= "mv $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";

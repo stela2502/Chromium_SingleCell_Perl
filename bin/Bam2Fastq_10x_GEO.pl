@@ -171,22 +171,62 @@ my ( $sample_name, $UMI, $entry );
 #		$UMI = $matching_IDs[4];
 #	}
 
+sub filter_read {
+	my ( $read, $min_length ) = @_;
+
+	$min_length ||= 10;
+
+	## filter polyT at read end
+	if ( $read->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+	}
+	if ( $read->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
+		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+	}
+		
+	## filter reads with high ployX (>= 50%)
+
+	my $str = $read->sequence();
+	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
+		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
+			my $by = 'N' x length($repl);
+			$str =~ s/$repl/$by/;
+		}
+	}
+	my $count = $str =~ tr/N/n/;
+
+	if ( $count != 0 and $count / length($str) > 0.5 ) {
+		return undef;
+	}
+
+	## return filtered read
+
+	return $read;
+}
+
 sub filter {
 	shift; ## get rid of the BAMfile object
 	my @bam_line = split( "\t", shift );
 	return if ( $bam_line[0] =~ m/^\@/ );
 	$total_reads ++;
+	if ( $total_reads % 1e+5 == 0 ) {
+		print ".";
+	}
 	( $sample_name, $UMI ) = &sample_and_umi_cellranger( @bam_line );
 	
 	if ( defined $UMI and defined $sample_name ) {
 		#print "process next line and got '$sample_name' and '$UMI'\n";
 		$entry->clear();
-		$counter->{$sample_name}++;
-		$entry->name ( "$bam_line[0]:".join("_", 'C','ACGT','C',$sample_name,$UMI));
+		$entry->name ( '@'."$bam_line[0]:".join("_", 'C','ACGT','C',$sample_name,$UMI));
 		$entry->sequence($bam_line[9]);
 		$entry->quality($bam_line[10]);
-		$entry->write($OUT);
-		last FILTER if ( $debug );
+		$entry = filter_read($entry);
+		if ( length( $entry->sequence() ) > 20 ) {
+			$entry->write($OUT);
+			$counter->{$sample_name}++;
+		}else {
+			$filtered_out++;
+		}
 	}
 	else {
 		#print "No UMI and sampleID\n";
@@ -217,6 +257,11 @@ if ( -t STDOUT ) {
 
 
 my ($ofile);
+
+if ( -t STDOUT ) { ## for the progress bar
+	$| = 1;
+}
+
 $entry = stefans_libs::FastqFile::FastqEntry->new();
 print "Started a summary run on ".scalar(@infiles)." file sets\n";
 	
@@ -225,6 +270,7 @@ print "Started a summary run on ".scalar(@infiles)." file sets\n";
 	  or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
 
 	my $bam_file = stefans_libs::BAMfile->new();
+	$bam_file ->{'debug'} = 1 if ( $debug ); #restrict output to first 1000 reads
 
 	for ( my $i = 0 ; $i < @infiles ; $i++ ) {
 		print "Process file $i '$infiles[$i]'\n";	
