@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 20;
+use Test::More tests => 21;
 use stefans_libs::flexible_data_structures::data_table;
 use stefans_libs::result_table;
 
@@ -77,45 +77,66 @@ $result_table ->line_separator(';');
 #	print "$i : \$exp = ".root->print_perl_var_def( \%t ).";\n";
 #	
 #}
-
-$exp = {
-  'ATAGACCGTGGTGTAG' => '2',
-  'CACAAACCACTTCTGC' => '2',
+my $exp1 = {
+  'ATAGACCGTGGTGTAG' => '1',
+  'ATAGACCGTGGTGTAG spliced' => '1',
+  'CACAAACCACTTCTGC' => '1',
+  'CACAAACCACTTCTGC spliced' => '1',
   'CCGTGGACATAACCTG' => undef,
   'CCGTGGACATAACCTG spliced' => undef,
-  'GTCATTTAGTCGTTTG' => '2',
-  'GTCCTCATCTGCAGTA' => '2',
+  'GTCATTTAGTCGTTTG' => '1',
+  'GTCATTTAGTCGTTTG spliced' => '1',
+  'GTCCTCATCTGCAGTA' => '1',
+  'GTCCTCATCTGCAGTA spliced' => '1',
   'Gene_ID' => 'ENSMUSG00000108159.1',
   'TAAGCGTGTGGGTATG' => undef,
   'TAAGCGTGTGGGTATG spliced' => undef,
-  'TACAGTGGTTATTCTC' => '2',
-  'TGCGTGGAGCTACCGC' => '6'
+  'TACAGTGGTTATTCTC' => '1',
+  'TACAGTGGTTATTCTC spliced' => '1',
+  'TGCGTGGAGCTACCGC' => '1',
+  'TGCGTGGAGCTACCGC spliced' => '1'
 };
-
 my $t;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
-is_deeply( $t, $exp, "data line for ENSMUSG00000108159.1" ); #109020	111963
+is_deeply( $t, $exp1, "data line for ENSMUSG00000108159.1" ); #109020	111963
 
-$exp = {
+my $exp2 = {
   'ATAGACCGTGGTGTAG' => undef,
+  'ATAGACCGTGGTGTAG spliced' => undef,
   'CACAAACCACTTCTGC' => undef,
+  'CACAAACCACTTCTGC spliced' => undef,
   'CCGTGGACATAACCTG' => '2',
   'CCGTGGACATAACCTG spliced' => '2',
   'GTCATTTAGTCGTTTG' => undef,
+  'GTCATTTAGTCGTTTG spliced' => undef,
   'GTCCTCATCTGCAGTA' => undef,
+  'GTCCTCATCTGCAGTA spliced' => undef,
   'Gene_ID' => 'ENSMUSG00000106728.3',
-  'TAAGCGTGTGGGTATG' => '3',
-  'TAAGCGTGTGGGTATG spliced' => '3',
+  'TAAGCGTGTGGGTATG' => '1',
+  'TAAGCGTGTGGGTATG spliced' => '1',
   'TACAGTGGTTATTCTC' => undef,
-  'TGCGTGGAGCTACCGC' => undef
+  'TACAGTGGTTATTCTC spliced' => undef,
+  'TGCGTGGAGCTACCGC' => undef,
+  'TGCGTGGAGCTACCGC spliced' => undef
 };
 
 $t = undef;
 
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[1]};
 
-is_deeply( $t, $exp, "data line for ENSMUSG00000106728.3" ); # 389199	414164
+is_deeply( $t, $exp2, "data line for ENSMUSG00000106728.3" ); # 389199	414164
+
+
+#print "\$exp = ".root->print_perl_var_def( $result_table->createIndex('Gene_ID') ).";\n";
+my $exp3 = {
+  'ENSMUSG00000106728.3' => [ '1' ],
+  'ENSMUSG00000108159.1' => [ '0' ]
+};
+
+is_deeply ( $result_table->createIndex('Gene_ID'), $exp3, "Gene ENSMUSG00000107912.1 not reported" );
+
+#print $result_table->AsString();
 
 ## restart #1
 system("rm -Rf $outpath/*");
@@ -158,47 +179,19 @@ $result_table ->line_separator(';');
 #	my %t;
 #	@t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[$i]};
 #	print "$i : \$exp = ".root->print_perl_var_def( \%t ).";\n";
-#	
 #}
 
-$exp = {
-  'ATAGACCGTGGTGTAG' => '2',
-  'CACAAACCACTTCTGC' => '2',
-  'CCGTGGACATAACCTG' => undef,
-  'CCGTGGACATAACCTG spliced' => undef,
-  'GTCATTTAGTCGTTTG' => '2',
-  'GTCCTCATCTGCAGTA' => '2',
-  'Gene_ID' => 'ENSMUSG00000108159.1',
-  'TAAGCGTGTGGGTATG' => undef,
-  'TAAGCGTGTGGGTATG spliced' => undef,
-  'TACAGTGGTTATTCTC' => '2',
-  'TGCGTGGAGCTACCGC' => '6'
-};
 
 $t = undef;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
-is_deeply( $t, $exp, "drop_chr data line for ENSMUSG00000108159.1" ); #109020	111963
-
-$exp = {
-  'ATAGACCGTGGTGTAG' => undef,
-  'CACAAACCACTTCTGC' => undef,
-  'CCGTGGACATAACCTG' => '2',
-  'CCGTGGACATAACCTG spliced' => '2',
-  'GTCATTTAGTCGTTTG' => undef,
-  'GTCCTCATCTGCAGTA' => undef,
-  'Gene_ID' => 'ENSMUSG00000106728.3',
-  'TAAGCGTGTGGGTATG' => '3',
-  'TAAGCGTGTGGGTATG spliced' => '3',
-  'TACAGTGGTTATTCTC' => undef,
-  'TGCGTGGAGCTACCGC' => undef
-};
+is_deeply( $t, $exp1, "drop_chr data line for ENSMUSG00000108159.1" ); #109020	111963
 
 $t = undef;
 
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[1]};
 
-is_deeply( $t, $exp, "drop_chr data line for ENSMUSG00000106728.3" ); # 389199	414164
+is_deeply( $t, $exp2, "drop_chr data line for ENSMUSG00000106728.3" ); # 389199	414164
 
 
 ## restart
@@ -228,15 +221,10 @@ ok ( -d $outfile, "the chr slice#1 outpath");
 $result_table -> import_tables ( $outfile );
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
 
-$exp = {
-  'ATAGACCGTGGTGTAG' => '2',
-  'CACAAACCACTTCTGC' => '2',
-  'GTCATTTAGTCGTTTG' => '2',
-  'GTCCTCATCTGCAGTA' => '2',
-  'Gene_ID' => 'ENSMUSG00000108159.1',
-  'TACAGTGGTTATTCTC' => '2',
-  'TGCGTGGAGCTACCGC' => '6'
-};
+$exp = undef;
+foreach ( keys %$exp1 ) {
+	$exp->{$_} = $exp1->{$_} if ( defined $exp1->{$_} );
+}
 
 $t = undef;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
@@ -275,13 +263,10 @@ $result_table -> import_tables ( $outfile );
 $t = undef;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
-$exp = {
-  'CCGTGGACATAACCTG' => '2',
-  'CCGTGGACATAACCTG spliced' => '2',
-  'Gene_ID' => 'ENSMUSG00000106728.3',
-  'TAAGCGTGTGGGTATG' => '3',
-  'TAAGCGTGTGGGTATG spliced' => '3',
-};
+$exp = undef;
+foreach ( keys %$exp2 ) {
+	$exp->{$_} = $exp2->{$_} if ( defined $exp2->{$_} );
+}
 
 is_deeply( $t, $exp, "data line for ENSMUSG00000108159.1 only" ); #109020	111963
 

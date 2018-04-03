@@ -526,7 +526,7 @@ sub print2table {
 	}else {
 		$outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
 	}
-	warn "result_table is exporting to $outpath\n";
+	print "result_table is exporting to $outpath\n";
 	mkdir($outpath) unless ( -d $outpath );
 	my $ofile;
 
@@ -729,14 +729,14 @@ sub prepare_data_table {
 		}
 	}
 	unless ($save) {
-		warn "I got save == $save and therefore I drop the data\n";
+		#warn "I got save == $save and therefore I drop the data\n";
 		if ( $data->Lines() > 0 ) {
 			$self->{'__lastDataID__'} = $data_id;
 		}
 		$self->{'uniques'}->{'Gene_ID'} = undef;
 	}
 	else {
-		warn "we restore the data\n";
+		#warn "we restore the data\n";
 		$self->{'data'} = \@store;
 	}
 	$| = 0;    ## local progress bar off.

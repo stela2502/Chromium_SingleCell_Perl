@@ -257,12 +257,6 @@ else {
 
 }
 
-if ( $gtf_obj->Lines() == 0 ) {
-	die "I do not have any information in the gtf file for chr '"
-	  . $gtf_obj->_checkChr($drop_chr)
-	  . "' - useless aprocess.\n";
-}
-
 $gtf_obj->{'debug'} = $debug;
 
 $gtf_obj -> GeneFreeSplits(); ## define the gene free splits in order to keep problems with missing genes as low as possible.
@@ -270,6 +264,14 @@ $gtf_obj -> GeneFreeSplits(); ## define the gene free splits in order to keep pr
 $gtf_obj =
   $gtf_obj->select_where( 'feature',
 	sub { $_[0] eq $options->{'quantify_on'} } );
+	
+
+if ( $gtf_obj->Lines() == 0 ) {
+	die "I do not have any information in the gtf file for chr '"
+	  . $gtf_obj->_checkChr($drop_chr)
+	  . "' - useless aprocess.\n";
+}
+
 my (
 	@matching_IDs, @matching_IDs2, $N,          $Seq,
 	$sample_name,  $sample_table,  $sample_row, $sum,
@@ -285,9 +287,9 @@ print
   "processing the initial sample summary files and detect usable cell ids.\n";
 my ( $OK, @tmp, $reads );
 
-if ( -f $fastqPath . "/.passing_samples.txt" ) {
-	print "using hidden file $fastqPath/.passing_samples.txt\n";
-	open( IN, "<" . $fastqPath . "/.passing_samples.txt" );
+if ( -f $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" ) {
+	print "using hidden file $fastqPath/.passing_samples.$options->{'min_UMIs'}.txt\n";
+	open( IN, "<" . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" );
 	while (<IN>) {
 		chomp;
 		@tmp = split( "\t", $_ );
@@ -311,16 +313,20 @@ else {
 			@tmp = split( "\t", $_ );
 			next if ( $tmp[1] eq "count" );
 			if ( $tmp[1] >= $options->{'min_UMIs'} ) {
-				$reads = $tmp[1];
-				@tmp = split( "_", $tmp[0] );
-				$OK->{ $tmp[3] } += $reads;
+				if ( $tmp[0] =~m/_/ ){
+					$reads = $tmp[1];
+					@tmp = split( "_", $tmp[0] );
+					$OK->{ $tmp[3] } += $reads;
+				}else {
+					$OK->{ $tmp[0] } += $tmp[1];
+				}
 			}
 		}
 		close(IN);
 	}
-	if ( !-f . $fastqPath . "/.passing_samples.txt" ) {
+	if ( !-f . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" ) {
 		## an other process might have been faster ;-)
-		open( OUT, ">" . $fastqPath . "/.passing_samples.txt" )
+		open( OUT, ">" . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" )
 		  or die "I could not create the hidden samples file!\n$!\n";
 		foreach ( sort keys %$OK ) {
 			print OUT "$_\t$OK->{$_}\n";
@@ -422,11 +428,32 @@ sub sample_and_umi_cellranger {
 	return ( $sample_name, $UMI );
 }
 
+sub result_areas {
+        my ( $start, $cigar ) = @_;
+        if ( $cigar =~m/^(\d+)S/ ) {
+                $start += $1;
+                $cigar =~s/^\d+S//;
+        }
+        my @r;
+        $cigar =~ s/([SNM])(\d)/$1-$2/g;
+        foreach ( split("-", $cigar) ){
+                if ( $_ =~ m/(\d+)M/ ) {
+                        push ( @r, [$start, ($start + $1)]);
+                        $start += $1 -1;
+                }elsif( $_ =~ m/(\d+)[NS]/ ) {
+                        $start += $1 -1;
+                }else {
+                        die "I do not know what do do with that cigar part: $_\n";
+                }
+        }
+        return @r;
+}
+
+
 sub filter {
 	shift;
 	my @bam_line = split( "\t", shift );
 	return if ( $bam_line[0] =~ m/^\@/ );
-
 	#die if ( $runs == 100);
 	$runs++;
 
@@ -434,7 +461,10 @@ sub filter {
 		print ".";
 	}
 	( $sample_name, $UMI ) = sample_and_umi_my(@bam_line);
-	return unless ( $OK->{$sample_name} );    ## new way to get rid of crap
+	unless ( $OK->{$sample_name} ){
+		warn "sample $sample_name should not be analyzed\n" if ( $bugfix );
+		return;
+	}    ## new way to get rid of crap
 	Carp::confess(
 		"Sorry I lack the UMI information - have you used SplitToCells.pl?\n\t"
 		  . join( "\t", @bam_line ) )
@@ -470,90 +500,70 @@ sub filter {
 	  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n"
 	  if ($bugfix);
 	## start with the real matching
-	@matching_IDs = &get_matching_ids( $gtf_obj, $bam_line[2], $bam_line[3],  1 ); ## 1 == update
-
-	if ( @matching_IDs == 0 ) {
-		## probably the gtf is not correct and the read only overlaps the exon e.g. continues outside the exon?
-		$Seq = 0;
-		map { $Seq += $_ }
-		  $bam_line[5] =~ m/(\d+)[NMS]/g
-		  ;  ## the fist match should be in the exon and overlap to at least 50%
-		     #$Seq = ceil($Seq/2);
-		@matching_IDs =
-		  &get_matching_ids( $gtf_obj, $bam_line[2], $bam_line[3] + $Seq ); ## do not update!
+	my @read_areas = &result_areas( $bam_line[3], $bam_line[5] );
+	my @matching_IDs =  &get_matching_ids( $gtf_obj, $bam_line[2], @{$read_areas[0]}[0], @{$read_areas[0]}[1], 1 ); ## 1 == update
+	
+	if ( @matching_IDs == 0 ) { ## the first part of the match did not overlap an exon - kick it?
+		warn "No matching featuires!\n"if ( $bugfix );
+		return; # yes kick it!
+#		$Seq = 0;
+#		map { $Seq += $_ }
+#		  $bam_line[5] =~ m/(\d+)[NMS]/g
+#		  ;  ## the fist match should be in the exon and overlap to at least 50%
+#		     #$Seq = ceil($Seq/2);
+#		@matching_IDs =
+#		  &get_matching_ids( $gtf_obj, $bam_line[2], $bam_line[3] + $Seq ); ## do not update!
 	#	warn
 	#  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3] and ".($bam_line[3] + $Seq)."\n"
 	}
 
 	warn "\tGot a matching ID? " . join( ", ", @matching_IDs ) . "\n"
 	  if ($bugfix);
-	if ( scalar(@matching_IDs) == 0 ) {    ## no match to any gene / exon
-		warn "\tNo matching featuires!\n" if ($bugfix);
-		return;
-	}
+
+	## I got a match and therfore need to store the sample info and UMI info
 	@{ @{ $sample_table->{'data'} }[$sample_row] }[2]++;
 
 	$self->{'UMI'}->{$sample_name} ||= {};
 	$self->{'UMI'}->{$sample_name}->{$UMI}++;
 	$self->{'UMIs'}->{$UMI}++;
+	
+	## have we seen this UMI for this sample already?
 	if ( $self->{'UMIs'}->{$UMI} > 1 ) {
 		$self->{'duplicates'}++;
-
 		warn "\tNo a UMI duplicate ($UMI)\n" if ($bugfix);
-
 		return if $self->{'UMI'}->{$sample_name}->{$UMI};
-	}    ## the sample specific UMIs will lead to a merge of the samples
-	##and therefore I should not add more than one UMI per exon
+	}
 
-	@matching_IDs = &get_reporter_ids( $gtf_obj, @matching_IDs );
+	my @matching_Names = &get_reporter_ids( $gtf_obj, @matching_IDs );
 
-#Carp::confess ("get_reporter_ids $bam_line[2], $bam_line[3],".($bam_line[3] + $Seq)." got the IDs:".join(", ",@matching_IDs)."\nand will not match to a new id untill $self->{'end'}\n");
-	$N   = 0;
-	$rem = 0;
-	map { $N += $_ } $bam_line[5] =~ m/(\d+)N/g;
-	$Seq = 0;
-	map { $Seq += $_ } $bam_line[5] =~ m/(\d+)M/g;
-
-	if ( $N > $Seq ) {
-		map { $rem += $_ } $bam_line[5] =~ m/(\d+)M/;
-		## most probably spliced! (?)
-		## So the real match can only be on an element on both ends of the splice
-		$Seq = 0;
-		map { $Seq += $_ } $bam_line[4] =~ m/(\d+)/g;
-		my ( $A, $B );
-		@matching_IDs2 = &lintersect(
-			@matching_IDs,
+	if ( @matching_Names > 0 ){
+		## do we have a spliced read?
+		if ( @read_areas > 1 ) {
+			## So the real match can only be on an element on both ends of the splice
+			foreach my $region ( @read_areas[1..$#read_areas] ) {
+			@matching_Names = &lintersect(
+			@matching_Names,
 			&get_reporter_ids(
 				$gtf_obj,
 				$gtf_obj->efficient_match_chr_position(
 					$bam_line[2],
-					( $bam_line[3] +
-						  $N + $rem +
-						  1 )    # 1 bp into the putative next exon.
+					@$region
 				)
 			)
-		);
-
-#warn "putative splice event $bam_line[2], $bam_line[3] + $N - $rem\n";
-#warn "there should be an exon with end ".($bam_line[3]+$rem -1)." and one with start ".($bam_line[3] + $N + $rem)."\n";
-		if ( @matching_IDs2 > 0 ) {
-
-			warn "Splice event: instead of matching-ids ("
-			  . join( ", ", @matching_IDs )
-			  . ") I now have matching_IDs2 ("
-			  . join( ", ", @matching_IDs2 ) . ")\n" if ( $bugfix );
-
-			#  . join( ", ", @matching_IDs ) . "\n";
-			&add_to_summary( $sample_name, \@matching_IDs2, 1, "$bam_line[3]..".($bam_line[3]+$rem). " and $bam_line[5]" );
+			);
+			}
+			if ( @matching_Names == 0 ) {
+				#warn "I have lost all initial mapping genes for the read ".join("\t", @bam_line[0,2,5,9,10])."\n";
+				return;
+			}
+			else{
+				&add_to_summary( $sample_name, \@matching_Names, 1, "not used anyhow" );
+			}
+			
+		}else { ## no spiced read
+			&add_to_summary( $sample_name, \@matching_Names, 0, "$bam_line[3] and $bam_line[5]" );
 		}
 	}
-	else {
-		if ( $matching_IDs[0] eq "Lpo" ) {
-			warn "putative crap $matching_IDs[0] with start $bam_line[3] and $bam_line[5]?\n";
-		}
-		&add_to_summary( $sample_name, \@matching_IDs, 0, "$bam_line[3] and $bam_line[5]" );
-	}
-
 }
 
 #my $pm = Parallel::ForkManager->new($forks);
@@ -948,7 +958,7 @@ print "Done\n";
 close(LOG);
 
 sub get_matching_ids {
-	my ( $gtf, $chr, $start, $update ) = @_;
+	my ( $gtf, $chr, $start, $end, $update ) = @_;
 	my ( @IDS, $nextID );
 	unless ( $self->{'chr'} eq $chr ) {
 		$self->{'chr'}        = $chr;
@@ -959,7 +969,7 @@ sub get_matching_ids {
 		&reinit_UMI();
 		warn "Quant init chr $chr\n" if ($bugfix);
 	}
-	if ( $self->{'last_start'} > $start ) {
+	if ( $self->{'last_start'} > $end ) {
 		## shit - that should not be possible!
 		## better save than sorry:
 		warn "reinit end and next_start\n";
@@ -977,7 +987,7 @@ sub get_matching_ids {
 		  if ($bugfix);
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
-		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start );
+		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start, $end );
 		if ( scalar(@IDS) == 1 and !defined $IDS[0] ) {
 			## useless chr!
 			$self->{'skip'} = $chr;
@@ -1018,7 +1028,7 @@ sub get_matching_ids {
 		if ( !defined $self->{'next_start'} ){
 			## OK that can only mean, that with this mapper there are no new entries untill the next chr mapper would be used.
 			my $chr_id = $gtf->get_chr_subID_4_start($chr, $start);
-			$self->{'next_start'} = @{ @{ $gtf->{'__GeneFreeSplits__'} }[$chr_id] }[ 2 ]; # the end of the area covered by the mapper.
+			$self->{'next_start'} = @{ @{ $gtf->{'__GeneFreeSplits__'}->{'data'} }[$chr_id] }[ 2 ]; # the end of the area covered by the mapper.
 		}
 
 		@starts = @ends = undef;

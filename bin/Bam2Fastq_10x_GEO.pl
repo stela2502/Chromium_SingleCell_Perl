@@ -134,7 +134,9 @@ close(LOG);
 
 ## Do whatever you want!
 
-my ( $counter, $OUT, $filtered_out, $total_reads);
+my ( $counter, $OUT, $filtered_out, $total_reads, $entry);
+
+$entry = stefans_libs::FastqFile::FastqEntry->new();
 
 sub sample_and_umi_cellranger {
 	my (@bam_line) = @_;
@@ -161,7 +163,7 @@ sub sample_and_umi_cellranger {
 	#print "\n";
 	return ( $sample_name, $UMI );
 }
-my ( $sample_name, $UMI, $entry );
+my ( $sample_name, $UMI );
 
 #	my @matching_IDs = split( ":", $bam_line[0] );
 #	@matching_IDs = split( "_", pop(@matching_IDs) );
@@ -196,7 +198,8 @@ sub filter_read {
 	my $count = $str =~ tr/N/n/;
 
 	if ( $count != 0 and $count / length($str) > 0.5 ) {
-		return undef;
+		$read ->sequence('AAG'); ## returning undef kills that script!
+		return $read;
 	}
 
 	## return filtered read
@@ -216,12 +219,13 @@ sub filter {
 	
 	if ( defined $UMI and defined $sample_name ) {
 		#print "process next line and got '$sample_name' and '$UMI'\n";
-		$entry->clear();
+		$entry ->clear();
+		#$entry = stefans_libs::FastqFile::FastqEntry->new();
 		$entry->name ( '@'."$bam_line[0]:".join("_", 'C','ACGT','C',$sample_name,$UMI));
 		$entry->sequence($bam_line[9]);
 		$entry->quality($bam_line[10]);
 		$entry = filter_read($entry);
-		if ( length( $entry->sequence() ) > 20 ) {
+		if ( defined $entry and  length( $entry->sequence() ) > 20 ) {
 			$entry->write($OUT);
 			$counter->{$sample_name}++;
 		}else {

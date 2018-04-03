@@ -79,13 +79,13 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 my (
-	$help,     $debug,  $database, $gtf,     $fast_tmp, $local,
-	$coverage, $genome, $outpath,  $options, @options,  @bam,
-	$sname,    $n,       $avail_chr
+	$help,    $debug,    $database, $gtf,     $fast_tmp,
+	$local,   $coverage, $genome,   $outpath, $options,
+	@options, @bam,      $sname,    $n,       $avail_chr
 );
 
 Getopt::Long::GetOptions(
-	"-bam=s{,}"      => \@bam,
+	"-bam=s{,}"     => \@bam,
 	"-gtf=s"        => \$gtf,
 	"-coverage=s"   => \$coverage,
 	"-genome=s"     => \$genome,
@@ -112,7 +112,8 @@ my $error = '';
 my ($task_description);
 
 $task_description .= 'perl ' . $plugin_path . '/10xreanalyzePublishedBam.pl';
-$task_description .= ' -bam "' . join( '" "', @bam ) . '"' if ( defined $bam[0] );
+$task_description .= ' -bam "' . join( '" "', @bam ) . '"'
+  if ( defined $bam[0] );
 
 $task_description .= " -gtf '$gtf'"           if ( defined $gtf );
 $task_description .= " -coverage '$coverage'" if ( defined $coverage );
@@ -123,7 +124,6 @@ $task_description .= ' -options "' . join( '" "', @options ) . '"'
 $task_description .= " -sname $sname";
 $task_description .= ' -debug' if ($debug);
 $task_description .= ' -local' if ($local);
-
 
 unless ( -f $bam[0] ) {
 	$error .= "the cmd line switch -bam is undefined!\n";
@@ -232,6 +232,8 @@ $start_this = &check_time_since( $start, 'Setup' );
 
 ## first we need to run the SplitToCells.pl script. this should definitely be run on a blade.
 my ( $SLURM_ids, $sumFastqs );
+
+## the Bam2Fastq calls are only necessary if the input files are bam files and the fastq conversion has not been run on an other comuter.
 unless ($local) {
 	( $SLURM_ids, $sumFastqs ) = &SplitToCell($SLURM);
 	print "waiting for SplitToCell to finish\n";
@@ -252,14 +254,12 @@ $start_this = &check_time_since( $start_this,
 #hisat2_run_aurora.pl
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
-
 my $hisat2 =
     "hisat2_run_aurora.pl -files '"
   . join( "' '", @$sumFastqs )
   . "' -outpath $outpath/HISAT2_mapped/"
   . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
-  . " -options n 5 partitition $options->{'p'} A "
-  . $options->{'A'};
+  . " -options n 5 partitition $options->{'p'} A " . $options->{'A'};
 my $used = { map { $_ => 1 } qw( n A p N ) };
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
 	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );
@@ -274,7 +274,9 @@ print "we start the hist2 mapping process:\n" . $hisat2 . "\n";
 
 #die "First make sure we got all files!\n";
 
-map { unlink($_) } get_files_from_path( $outpath, "hisat2_run.local\\d*.out", "hisat2_run.local\\d*.err" );
+map { unlink($_) }
+  get_files_from_path( $outpath, "hisat2_run.local\\d*.out",
+	"hisat2_run.local\\d*.err" );
 
 $SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
 ## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/hisat2_run<PID>.err and $outpath/hisat2_run<PID>.out file
@@ -282,6 +284,7 @@ $SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
 ## Identify the run ids we need to wait for:
 
 my @tmp = get_files_from_path( $outpath, "hisat2_run.local\\d*.out" );
+
 #Carp::confess("I did not get a usable hisat out file? $tmp[0]\n");
 unless ( -f $tmp[0] ) {
 	Carp::confess("I did not get a usable hisat out file!\n");
@@ -291,9 +294,10 @@ open( RUN, $tmp[0] )
 
 $SLURM_ids = [];
 foreach (<RUN>) {
+
 	#Submitted batch job '646227'
 	#Done
-	
+
 	if ( $_ = /Submitted batch job '?(\d+)'?/ ) {
 		push( @$SLURM_ids, $1 );
 	}
@@ -441,7 +445,7 @@ print "n10xpipeline.pl total run time: "
 
 sub get_files_from_path {
 	my ( $path, @matches ) = @_;
-	return $SLURM->get_files_from_path($path, @matches);
+	return $SLURM->get_files_from_path( $path, @matches );
 }
 
 =head3 check_time_since ( $start_last, $msg )
@@ -533,14 +537,13 @@ sub byFileSize {
 	-s $b <=> -s $a;
 }
 
-
 sub FileSizeOrder {
 	my @files = @_;
-	my $i = 0;
-	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my $i     = 0;
+	my $order = { map { $_ => $i++ } @files };
 	my @ret;
 	foreach ( sort byFileSize @files ) {
-		push( @ret, $order->{$_});
+		push( @ret, $order->{$_} );
 	}
 	return @ret;
 }
@@ -589,7 +592,8 @@ sub QuantifyBamFile_local {
 		push( @paths, $path );
 		my $pid = $pm->start and next FILES;
 		print "producing files in $path\n";
-	#	print "Quantify cmd:" . $cmd . "\n";
+
+		#	print "Quantify cmd:" . $cmd . "\n";
 		$SLURM_local->run( $cmd,
 			"$outpath/QuantifyBamFile_$fm->{'filename'}" . "_$sname",
 			"$path/barcodes.tsv" );
@@ -695,17 +699,22 @@ sub fix_path_problems {
 
 sub SpitCell_CMD {
 	my ( $bam, $fast_tmp, $ofile ) = @_;
-	my $cmd = 'Bam2Fastq_10x_GEO.pl';
-	$cmd .= " -infiles $bam";
-	$cmd .= " -outpath $fast_tmp";
-	$cmd .= " -options oname $ofile". $slurmOptions;
-	$cmd .= " -debug" if ( $debug );
-	$cmd .= "\nmv $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
-	$cmd .= "\nmv $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
-	$cmd .= "mv $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
+	my $cmd;
+	if ( $bam =~ m/.fastq.gz$/ ) {
+		$cmd = "cp '$bam' '$ofile'";
+	}
+	else {
+		$cmd = 'Bam2Fastq_10x_GEO.pl';
+		$cmd .= " -infiles $bam";
+		$cmd .= " -outpath $fast_tmp";
+		$cmd .= " -options oname $ofile" . $slurmOptions;
+		$cmd .= " -debug" if ($debug);
+		$cmd .= "\nmv $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
+		$cmd .= "\nmv $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
+		$cmd .= "mv $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
+	}
 	return $cmd;
 }
-
 
 sub SplitToCell_local {
 	my ($SLURM) = @_;
@@ -721,7 +730,7 @@ sub SplitToCell_local {
 
 #die "this should fix the path problems::\n \$problems = ".root->print_perl_var_def( $fix ).";\n";
   FILES:
-	foreach my $i ( &FileSizeOrder(@bam) ) { ## start with the biggest
+	foreach my $i ( &FileSizeOrder(@bam) ) {    ## start with the biggest
 		my $pid   = $pm->start and next FILES;
 		my $ofile = $fix->{ $bam[$i] };
 		my $f     = root->filemap( $bam[$i] );
@@ -777,7 +786,7 @@ sub SplitToCell {
 	my $rev = &fix_path_problems()->{33}->{'fix'};
 	my $fix = { map { $rev->{$_} => $_ } keys %$rev };
 
-	foreach my $i ( &FileSizeOrder(@bam) ) { ## start with the biggest
+	foreach my $i ( &FileSizeOrder(@bam) ) {    ## start with the biggest
 		my $ofile = $fix->{ $bam[$i] };
 		my $f     = root->filemap( $bam[$i] );
 
