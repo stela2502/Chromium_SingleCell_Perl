@@ -701,7 +701,12 @@ sub SpitCell_CMD {
 	my ( $bam, $fast_tmp, $ofile ) = @_;
 	my $cmd;
 	if ( $bam =~ m/.fastq.gz$/ ) {
-		$cmd = "cp '$bam' '$ofile'";
+		unless ( $bam eq "$outpath/$ofile"){
+			$cmd = "cp '$bam' '$outpath/$ofile'";
+		}
+		else {
+			$cmd = "#cp '$bam' '$outpath/$ofile'";
+		}
 	}
 	else {
 		$cmd = 'Bam2Fastq_10x_GEO.pl';
