@@ -25,7 +25,7 @@
 =head1  SYNOPSIS
 
     Bam2Fastq_10x_GEO.pl
-       -infiless       :a input SRA or bam file downloaded from NCBI GEO containing 10x data
+       -infiles        :a input SRA or bam file downloaded from NCBI GEO containing 10x data
        -outpath        :the outpath
 
        -options:       A list of 'key' 'value' combinations

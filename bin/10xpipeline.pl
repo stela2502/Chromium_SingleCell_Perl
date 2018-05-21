@@ -666,7 +666,7 @@ sub QuantifyBamFile_local {
 sub QuantifyBamFile {
 	my ( $SLURM, @chrBams ) = @_;
 	my ( @ids, @paths );
-	$SLURM->{'options'}->add( 'n', 1 );
+	$SLURM->{'options'}->value( 'n', 1 );
 
 	foreach my $bam_file ( sort byFileSize @chrBams ) {
 
@@ -837,7 +837,7 @@ sub SplitToCell {
 
 	## now I need to start one script for every R1 R2 I1 combination
 	my ( @slurmIDs, @fastqs );
-	$SLURM->options( 'n', 2 )
+	$SLURM->{'options'}->value( 'n', 2 )
 	  ; ## set the number of cores to two (gzip in gzip out and the main reformate)
 	my $rev = &fix_path_problems()->{33}->{'fix'};
 	my $fix = { map { $rev->{$_} => $_ } keys %$rev };

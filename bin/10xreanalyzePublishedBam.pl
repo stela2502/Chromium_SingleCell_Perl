@@ -196,6 +196,8 @@ mkdir($outpath) unless ( -d $outpath );
 
 my $fm = root->filemap( "$outpath/" . $$ . "_10xpipeline.pl.log" );
 
+## get absolute paths into the @bam files:
+@bam = map { root->filemap($_)->{'total'} } @bam;
 #$outpath = $fm->{'path'};
 
 ## turn on autoflush for the process bar:
@@ -345,7 +347,7 @@ else {
 
 $SLURM->{'options'}->add( 'n', $n );
 
-my $cmd = 'ReshuffleBamFiles.pl';
+my $cmd = "rm -f $fast_tmp/chr*\n". 'ReshuffleBamFiles.pl';
 
 $cmd .= " -bams $outpath/HISAT2_mapped/*.sorted.bam";
 $cmd .= " -outpath $outpath/reshuffled/";

@@ -234,7 +234,7 @@ foreach my $file (sort byFileSize @bams) {
 				push( @ofiles, $ofile );
 				## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
 				unless ($debug) {
-					print "creating $slice\n";
+					print "creating $slice\n$cmd\n";
 					system($cmd );
 				}
 				else {
@@ -243,6 +243,8 @@ foreach my $file (sort byFileSize @bams) {
 					  . DateTime->now()->time() . "): "
 					  . $cmd . "\n";
 				}
+			}else {
+				warn "ReshuffleBamFile outfile $ofile exists\n";
 			}
 		}
 	}

@@ -591,6 +591,29 @@ sub print2file {
 
 }
 
+=head3 finalize_database($self)
+
+Will do a little sql 'magic' creating two new tables:
+create table s_number_of_reads ( sample_id integer, count integer);
+insert into s_number_of_reads ( sample_id, count )  select sample_id, count(value) from datavalues  group by sample_id ;
+create table g_number_of_reads ( gene_id integer, count integer, expressed integer, spliced integer);
+insert into g_number_of_reads ( gene_id, count, expressed, spliced )  select sample_id, count(value), sum(value), sum(spliced) from datavalues  group by sample_id ;
+
+=cut
+
+sub sql_create_summary_tables {
+	my ( $self ) = @_;
+	foreach my $statement ( 'create table s_number_of_reads ( sample_id integer, count integer);',
+'insert into s_number_of_reads ( sample_id, count )  select sample_id, count(value) from datavalues  group by sample_id ;',
+'create table g_number_of_reads ( gene_id integer, count integer, expressed integer, spliced integer);',
+'insert into g_number_of_reads ( gene_id, count, expressed, spliced )  select sample_id, count(value), sum(value), sum(spliced) from datavalues  group by sample_id ;'
+	){
+		$self->{'dbh'}->do($statement);
+	}
+	print "created s_number_of_reads and g_number_of_reads tables\n";
+	return $self;
+}
+
 sub prepare_gene_table {
 	my $self = shift;
 

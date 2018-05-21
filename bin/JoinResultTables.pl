@@ -152,8 +152,10 @@ if ( $result_table->{'data_storage_spliced'}){
 
 $result_table->print2file( $outfile );
 
-if ( $createTable ) {
-	$result_table->print2table ( $outfile );
-}
+#if ( $createTable ) {
+#	$result_table->print2table ( $outfile );
+#}
+
+$result_table->sql_create_summary_tables();
 
 print "Finished\n";
