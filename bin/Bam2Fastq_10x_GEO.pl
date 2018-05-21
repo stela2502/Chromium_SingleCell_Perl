@@ -123,7 +123,7 @@ my $V = stefans_libs::Version->new();
 
 mkdir($outpath) unless ( -d $outpath );
 open( LOG,
-	    ">$outpath/$options->{'oname'}.annotated.fastq.gz"
+	    ">$outpath/$options->{'sname'}.annotated.fastq.gz"
 	  . $$
 	  . "_SplitToCells.pl.log" )
   or die $!;
@@ -131,6 +131,7 @@ print LOG '#library version '.$V->version( 'Chromium_SingleCell_Perl' )."\n";
 print LOG $task_description . "\n";
 close(LOG);
 
+$options->{'sname'} ||= "unknown";
 
 ## Do whatever you want!
 
@@ -269,7 +270,7 @@ if ( -t STDOUT ) { ## for the progress bar
 $entry = stefans_libs::FastqFile::FastqEntry->new();
 print "Started a summary run on ".scalar(@infiles)." file sets\n";
 	
-	$ofile = "$outpath/$options->{'oname'}.annotated.fastq.gz";
+	$ofile = "$outpath/$options->{'sname'}.annotated.fastq.gz";
 	open( $OUT, "| /bin/gzip -c > $ofile" )
 	  or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
 
@@ -284,9 +285,9 @@ print "Started a summary run on ".scalar(@infiles)." file sets\n";
 
 	close($OUT);
 
-	open( OUT, ">$outpath/$options->{'oname'}.per_cell_read_count.xls" )
+	open( OUT, ">$outpath/$options->{'sname'}.per_cell_read_count.xls" )
 	  or die
-"I could not open the file '$outpath/$options->{'oname'}.per_cell_read_count.xls'\n$!\n";
+"I could not open the file '$outpath/$options->{'sname'}.per_cell_read_count.xls'\n$!\n";
 	print OUT "#total of $total_reads reads processed\n";
 	print OUT "#no sample/UMI information in $filtered_out reads\n";
 	print OUT "Cell_ID\tcount\n";
