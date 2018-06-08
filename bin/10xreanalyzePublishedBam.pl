@@ -261,7 +261,7 @@ my $hisat2 =
   . join( "' '", @$sumFastqs )
   . "' -outpath $outpath/HISAT2_mapped/"
   . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
-  . " -options n 5 partitition $options->{'p'} A " . $options->{'A'};
+  . " -options t '06:00:00' n 5 partitition $options->{'p'} A " . $options->{'A'};
 my $used = { map { $_ => 1 } qw( n A p N ) };
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
 	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );

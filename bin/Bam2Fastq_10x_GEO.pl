@@ -256,11 +256,6 @@ sub FileSizeOrder {
 	return @ret;
 }
 
-if ( -t STDOUT ) {
-	$| = 1;
-}
-
-
 my ($ofile);
 
 if ( -t STDOUT ) { ## for the progress bar
