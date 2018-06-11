@@ -125,6 +125,7 @@ my $i = 0;
 my $OK = 0;
 my $tmp;
 my $runs = 0;
+my $counter;
 
 my $function = sub { 
 	
@@ -150,6 +151,8 @@ my $function = sub {
 			$OK ++;
 			$entry->name(join ("_", $entry->name(),"N","N", $cell, $umi ) ); ## This way the 10x pipeline can handle the bam results!
 			$entry->write($OUT);
+			$counter->{$cell} ||= 0;
+			$counter->{$cell}++;
 			#warn "used entry $i\n";
 		}
 	}else {
@@ -166,6 +169,16 @@ if ( -t STDOUT ) { ## for the progress bar
 
 $worker->filter_file( $function, $fastq );
 
+open( OUT, ">$outpath/$fm->{'filename_core'}.per_cell_read_count.xls" )
+  or die
+"I could not open the file '$outpath/$fm->{'filename_core'}.per_cell_read_count.xls'\n$!\n";
+print OUT "#total of $runs reads processed\n";
+print OUT "#no sample/UMI information in ".($runs- $OK)."\n";
+print OUT "Cell_ID\tcount\n";
+foreach my $key ( sort keys %$counter ) {
+	print OUT "$key\t$counter->{$key}\n";
+}
+close(OUT);
 
 close ( $OUT );
 
