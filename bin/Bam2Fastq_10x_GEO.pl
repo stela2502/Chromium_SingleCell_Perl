@@ -189,19 +189,19 @@ sub filter_read {
 		
 	## filter reads with high ployX (>= 50%)
 
-	my $str = $read->sequence();
-	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
-		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
-			my $by = 'N' x length($repl);
-			$str =~ s/$repl/$by/;
-		}
-	}
-	my $count = $str =~ tr/N/n/;
-
-	if ( $count != 0 and $count / length($str) > 0.5 ) {
-		$read ->sequence('AAG'); ## returning undef kills that script!
-		return $read;
-	}
+#	my $str = $read->sequence();
+#	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
+#		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
+#			my $by = 'N' x length($repl);
+#			$str =~ s/$repl/$by/;
+#		}
+#	}
+#	my $count = $str =~ tr/N/n/;
+#
+#	if ( $count != 0 and $count / length($str) > 0.5 ) {
+#		$read ->sequence('AAG'); ## returning undef kills that script!
+#		return $read;
+#	}
 
 	## return filtered read
 
@@ -213,8 +213,11 @@ sub filter {
 	my @bam_line = split( "\t", shift );
 	return if ( $bam_line[0] =~ m/^\@/ );
 	$total_reads ++;
-	if ( $total_reads % 1e+5 == 0 ) {
+	if ( $total_reads % 1e5 == 0 ) {
 		print ".";
+	}
+	if ( $total_reads % 1e7 == 0 ) {
+		print "\n" . ( $total_reads / 1e+7 ) . "e+7:";
 	}
 	( $sample_name, $UMI ) = &sample_and_umi_cellranger( @bam_line );
 	
@@ -261,6 +264,7 @@ my ($ofile);
 if ( -t STDOUT ) { ## for the progress bar
 	$| = 1;
 }
+print " 0e+7:";
 
 $entry = stefans_libs::FastqFile::FastqEntry->new();
 print "Started a summary run on ".scalar(@infiles)." file sets\n";
