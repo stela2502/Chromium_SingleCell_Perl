@@ -181,10 +181,10 @@ sub filter_read {
 
 	## filter polyT at read end
 	if ( $read->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
-		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$read->trim( 'end', length($1) );
 	}
 	if ( $read->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
-		$read->trim( 'end', length( $read->sequence() ) - length($1) );
+		$read->trim( 'end', length($1) );
 	}
 		
 	## filter reads with high ployX (>= 50%)

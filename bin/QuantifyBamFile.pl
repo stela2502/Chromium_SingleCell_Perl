@@ -287,9 +287,9 @@ print
   "processing the initial sample summary files and detect usable cell ids.\n";
 my ( $OK, @tmp, $reads );
 
-if ( -f $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" ) {
-	print "using hidden file $fastqPath/.passing_samples.$options->{'min_UMIs'}.txt\n";
-	open( IN, "<" . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" );
+if ( -f $fastqPath . "/.$sampleID.passing_samples.$options->{'min_UMIs'}.txt" ) {
+	print "using hidden file $fastqPath/.$sampleID.passing_samples.$options->{'min_UMIs'}.txt\n";
+	open( IN, "<" . $fastqPath . "/.$sampleID.passing_samples.$options->{'min_UMIs'}.txt" );
 	while (<IN>) {
 		chomp;
 		@tmp = split( "\t", $_ );
@@ -303,7 +303,9 @@ else {
 
 	my @samplefiles = grep { !/^\./ } grep { $sampleID } readdir(DIR);
 	@samplefiles = map { join( "/", $fastqPath, $_ ) } @samplefiles;
-
+	if ( @samplefiles == 0 ){
+		
+	}
 	foreach my $file ( grep { /xls$/ } @samplefiles ) {
 		print "I process file $file\n";
 		open( IN, "<$file" ) or die "I could not open file '$file'\n$!\n";
@@ -324,9 +326,9 @@ else {
 		}
 		close(IN);
 	}
-	if ( !-f . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" ) {
+	if ( !-f . $fastqPath . "/.$sampleID.passing_samples.$options->{'min_UMIs'}.txt" ) {
 		## an other process might have been faster ;-)
-		open( OUT, ">" . $fastqPath . "/.passing_samples.$options->{'min_UMIs'}.txt" )
+		open( OUT, ">" . $fastqPath . "/.$sampleID.passing_samples.$options->{'min_UMIs'}.txt" )
 		  or die "I could not create the hidden samples file!\n$!\n";
 		foreach ( sort keys %$OK ) {
 			print OUT "$_\t$OK->{$_}\n";
@@ -972,7 +974,7 @@ sub get_matching_ids {
 	if ( $self->{'last_start'} > $end ) {
 		## shit - that should not be possible!
 		## better save than sorry:
-		warn "reinit end and next_start\n";
+		warn "reinit end and next_start (".($self->{'last_start'} - $end)."bp)";
 		$self->{'end'} = $self->{'next_start'} = 0;
 	}
 	$self->{'last_start'} = $start if ( $update );

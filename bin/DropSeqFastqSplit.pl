@@ -24,7 +24,7 @@
 
 =head1  SYNOPSIS
 
-    DropSeqFqastSplit.pl
+    DropSeqFastqSplit.pl
        -fastq       :the Drop-Seq fastq file (PMID26000488)
        -outpath     :The outpath for the thousands of fastq files created
 
@@ -54,59 +54,53 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
-
-my ( $help, $debug, $database, $fastq, $outpath);
+my ( $help, $debug, $database, $fastq, $outpath );
 
 Getopt::Long::GetOptions(
-	 "-fastq=s"    => \$fastq,
-	 "-outpath=s"    => \$outpath,
+	"-fastq=s"   => \$fastq,
+	"-outpath=s" => \$outpath,
 
-	 "-help"             => \$help,
-	 "-debug"            => \$debug
+	"-help"  => \$help,
+	"-debug" => \$debug
 );
 
-my $warn = '';
+my $warn  = '';
 my $error = '';
 
-unless ( defined $fastq) {
+unless ( defined $fastq ) {
 	$error .= "the cmd line switch -fastq is undefined!\n";
 }
-unless ( defined $outpath) {
+unless ( defined $outpath ) {
 	$error .= "the cmd line switch -outpath is undefined!\n";
 }
 
-
-if ( $help ){
-	print helpString( ) ;
+if ($help) {
+	print helpString();
 	exit;
 }
 
-if ( $error =~ m/\w/ ){
-	helpString($error ) ;
+if ( $error =~ m/\w/ ) {
+	helpString($error);
 	exit;
 }
 
 sub helpString {
 	my $errorMessage = shift;
-	$errorMessage = ' ' unless ( defined $errorMessage); 
+	$errorMessage = ' ' unless ( defined $errorMessage );
 	print "$errorMessage.\n";
-	pod2usage(q(-verbose) => 1);
+	pod2usage( q(-verbose) => 1 );
 }
 
+my ($task_description);
 
+$task_description .= 'perl ' . $plugin_path . '/DropSeqFastqSplit.pl';
+$task_description .= " -fastq '$fastq'" if ( defined $fastq );
+$task_description .= " -outpath '$outpath'" if ( defined $outpath );
 
-my ( $task_description);
-
-$task_description .= 'perl '.$plugin_path .'/DropSeqFqastSplit.pl';
-$task_description .= " -fastq '$fastq'" if (defined $fastq);
-$task_description .= " -outpath '$outpath'" if (defined $outpath);
-
-
-
-mkdir( $outpath ) unless ( -d $outpath );
-open ( LOG , ">$outpath/".$$."_DropSeqFqastSplit.pl.log") or die $!;
-print LOG $task_description."\n";
-close ( LOG );
+mkdir($outpath) unless ( -d $outpath );
+open( LOG, ">$outpath/" . $$ . "_DropSeqFqastSplit.pl.log" ) or die $!;
+print LOG $task_description . "\n";
+close(LOG);
 
 ## Do whatever you want!
 
@@ -115,57 +109,63 @@ close ( LOG );
 
 my $worker = stefans_libs::FastqFile->new();
 
-my $fm = root->filemap( $fastq );
+my $fm    = root->filemap($fastq);
 my $ofile = "$fm->{'filename_core'}.fastq.gz";
 $ofile =~ s/\.f?a?s?t?q\.fastq/.fastq/;
-$ofile = File::Spec->catfile( $outpath, $ofile);
-open ( my $OUT , "| gzip -9 > $ofile") or die $!;
+$ofile = File::Spec->catfile( $outpath, $ofile );
+open( my $OUT, "| gzip -9 > $ofile" ) or die $!;
 
-my $i = 0;
+my $i  = 0;
 my $OK = 0;
 my $tmp;
 my $runs = 0;
 my $counter;
 
-my $function = sub { 
-	
+my $function = sub {
+
 	my ( $worker, $entry ) = @_;
 	$runs++;
-	if ( $runs % 1e4 == 0 ) {
+	if ( $runs % 1e5 == 0 ) {
 		print ".";
 	}
-	my $cell =  substr($entry->sequence(),0,12) ;
-	my $umi  =  substr($entry->sequence(),12, 8);
-	$entry -> trim( 'start', 20 );
-	
-	if ( $entry->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
-		$entry->trim( 'end', length( $entry->sequence() ) - length($1) );
+	if ( $runs % 1e7 == 0 ) {
+		print "\n" . ( $runs / 1e+7 ) . "e+7:";
 	}
-	if ( $entry->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
-		$entry->trim( 'end', length( $entry->sequence() ) - length($1) );
-	}
+	my $cell = substr( $entry->sequence(), 0,  12 );
+	my $umi  = substr( $entry->sequence(), 12, 8 );
+
 	$tmp = "$cell.$umi";
-	unless (  $tmp =~ m/[nN]/  ){
+	
+	unless ( $tmp =~ m/[nN]/ ) {
 		#warn "both no N's\n";
-		if (  length( $entry->sequence()) > 20 ) {
-			$OK ++;
-			$entry->name(join ("_", $entry->name(),"N","N", $cell, $umi ) ); ## This way the 10x pipeline can handle the bam results!
-			$entry->write($OUT);
-			$counter->{$cell} ||= 0;
-			$counter->{$cell}++;
-			#warn "used entry $i\n";
+		
+		$entry->trim( 'start', 20 );
+
+		if ( $entry->sequence() =~ m/([Aa]{5}[Aa]+)$/ ) {
+			$entry->trim( 'end',  length($1) );
 		}
-	}else {
-		$tmp =~ tr/Nn/--/;
-		#warn "$tmp +  ".$entry->sequence()." $i ".length( $entry->sequence())."\n";
+		if ( $entry->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
+			$entry->trim( 'end',  length($1) );
+		}
+
+		if ( length( $entry->sequence() ) > 20 ) {
+			$OK++;
+			$entry->name( ( split( /\s+/, $entry->name() ) )[0] );
+			$entry->name( join( "_", $entry->name(), "N", "N", $cell, $umi ) )
+			  ;    ## This way the 10x pipeline can handle the bam results!
+			$entry->write($OUT);
+			$counter->{$cell}++;
+		}
 	}
 	$entry->clear();
-	
+
 };
 
-if ( -t STDOUT ) { ## for the progress bar
+if ( -t STDOUT ) {    ## for the progress bar
 	$| = 1;
 }
+
+print "" . ( $runs / 1e+7 ) . "e+7:";
 
 $worker->filter_file( $function, $fastq );
 
@@ -173,14 +173,16 @@ open( OUT, ">$outpath/$fm->{'filename_core'}.per_cell_read_count.xls" )
   or die
 "I could not open the file '$outpath/$fm->{'filename_core'}.per_cell_read_count.xls'\n$!\n";
 print OUT "#total of $runs reads processed\n";
-print OUT "#no sample/UMI information in ".($runs- $OK)."\n";
+print OUT "#no sample/UMI information in " . ( $runs - $OK ) . "\n";
 print OUT "Cell_ID\tcount\n";
 foreach my $key ( sort keys %$counter ) {
 	print OUT "$key\t$counter->{$key}\n";
 }
 close(OUT);
 
-close ( $OUT );
+close($OUT);
 
-print "\n\nAll $OK fastq entries have been renamed and stored in '$ofile' (".($runs- $OK)." have been filtered due to Ns in the cell or umi part or short read length)\n";
+print "\n\nAll $OK fastq entries have been renamed and stored in '$ofile' ("
+  . ( $runs - $OK )
+  . " have been filtered due to Ns in the cell or umi part or short read length)\n";
 

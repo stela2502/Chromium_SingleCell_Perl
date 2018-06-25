@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use stefans_libs::root;
-use Test::More tests => 2;
+use Test::More tests => 3;
 use stefans_libs::flexible_data_structures::data_table;
 
 use FindBin;
@@ -29,7 +29,7 @@ my $cmd =
 my $start = time;
 system($cmd );
 my $duration = time - $start;
-print "Execution time: $duration s\n";
+print "Run time: $duration s\n";
 
 use stefans_libs::FastqFile;
 
@@ -44,20 +44,20 @@ my $function = sub {
 };
 
 $worker->filter_file( $function, $ofile );
-print "\$exp = " . root->print_perl_var_def( \@values ) . ";\n";
+#print "\$exp = " . root->print_perl_var_def( \@values ) . ";\n";
 
-$exp = [ '@SRR6365735.76 76 length=70_N_N_CGGTTAAGATAC_AGGAGAAG
+$exp = [ '@SRR6365735.76_N_N_CGGTTAAGATAC_AGGAGAAG
 CATTTAAAANATAAANCANNGTANAAGTCACCAGATACTACTATCATTAT
-+SRR6365735.76 76 length=70
-///A//A//#EE//E#//##///#///A/<////<6A/////////////', 
-'@SRR6365735.79 79 length=69_N_N_CCCCGTACTCTG_CGTAGATA
++
+///A//A//#EE//E#//##///#///A/<////<6A/////////////', '@SRR6365735.79_N_N_CCCCGTACTCTG_CGTAGATA
 CCCCCGTACTCTGCGTNGATACCACTGCTTCCGCGGACAGGCGTGTAGA
-+SRR6365735.79 79 length=69
-///<//////A///<#///6//E/E/6<////<</A//6///E/EA///',
-'@SRR6365735.80 80 length=69_N_N_CTCTGCGTTGAT_ACCACTGC
++
+///<//////A///<#///6//E/E/6<////<</A//6///E/EA///', '@SRR6365735.80_N_N_CTCTGCGTTGAT_ACCACTGC
 CTCCTAGGCCACAGTNGTACTCTGCGTTGATACCACTGCTTCCGCGGAC
-+SRR6365735.80 80 length=69
++
 /6///A</E/E///<#/<E///A/</EE///</<A/A/A///A/<A///' ];
+
+is_deeply( \@values, $exp, "right fastq entries" );
 
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
