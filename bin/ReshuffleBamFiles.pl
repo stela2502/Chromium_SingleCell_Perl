@@ -53,6 +53,7 @@ use warnings;
 use stefans_libs::root;
 use Parallel::ForkManager;
 use File::Spec::Functions;
+use stefans_libs::SLURM;
 use DateTime;
 
 use stefans_libs::file_readers::gtf_file;
@@ -72,7 +73,7 @@ Getopt::Long::GetOptions(
 	"-outpath=s"  => \$outpath,
 	"-coverage=s" => \$coverage,
 	"-sampleID=s" => \$sampleID,
-	"-gtf=s"        => \$gtf,
+	"-gtf=s"      => \$gtf,
 	"-n=s"        => \$n,
 	"-tmp_path=s" => \$tmp_path,
 
@@ -159,18 +160,18 @@ close(IN);
 
 my $pm = Parallel::ForkManager->new($n);
 
-
 my @ofiles;
 if ( -f $gtf ) {
-
+	print "I am reading the genome annotation file\n";
 	unless ( -f "$outpath/chr_splits.txt" ) {
-		my $cmd = "IdentifyGeneFreeRegions.pl"
-			. " -gtf  $gtf"
-			. " -coverage $coverage" 
-			. " -outfile $outpath/chr_splits.txt"
-			. " -step 5000000";
+		my $cmd =
+		    "IdentifyGeneFreeRegions.pl"
+		  . " -gtf  $gtf"
+		  . " -coverage $coverage"
+		  . " -outfile $outpath/chr_splits.txt"
+		  . " -step 5000000";
 		print $cmd;
-		system( $cmd );
+		system($cmd );
 	}
 	$chr_splices = undef;
 	open( IN, "<$outpath/chr_splits.txt" )
@@ -183,30 +184,34 @@ if ( -f $gtf ) {
 		}
 	}
 	close(IN);
+	print "Done\n";
 }
 
 sub byFileSize {
 	-s $b <=> -s $a;
 }
 
-
 sub FileSizeOrder {
 	my @files = @_;
-	my $i = 0;
-	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my $i     = 0;
+	my $order = { map { $_ => $i++ } @files };
 	my @ret;
 	foreach ( sort byFileSize @files ) {
-		push( @ret, $order->{$_});
+		push( @ret, $order->{$_} );
 	}
 	return @ret;
 }
 
+my $SLURM = stefans_libs::SLURM->new()
+  ;    ## just for the $SLURM->get_files_from_path( $path, @matches );
+
 FILES:
-foreach my $file (sort byFileSize @bams) {
+foreach my $file ( sort byFileSize @bams ) {
 	my $pid = $pm->start and next FILES;
 	my $fm = root->filemap($file);
 	my ( $cmd, $ofile );
 	unless ( -f "$file.bai" ) {
+		print "samtools index $file\n";
 		system("samtools index $file") unless ($debug);
 	}
 	my $in;
@@ -243,7 +248,8 @@ foreach my $file (sort byFileSize @bams) {
 					  . DateTime->now()->time() . "): "
 					  . $cmd . "\n";
 				}
-			}else {
+			}
+			else {
 				warn "ReshuffleBamFile outfile $ofile exists\n";
 			}
 		}
@@ -266,19 +272,36 @@ foreach my $chr (@chrs) {
 		  if ( -f $outpath . $chr . "_" . $sampleID . ".$slice.sorted.bam" )
 		  ;                  ## the final outfile exists
 
-		my ( $cmd, $ofile, $ifiles );
-		$ifiles = File::Spec->catfile( $tmp_path, $chr . "_OP_*$slice.bam" );
+		my ( $cmd, $ofile, $ifiles, @tmp );
 		$ofile =
 		  File::Spec->catfile( $outpath,
 			$chr . "_" . $sampleID . ".$slice.sorted.bam" );
-		$cmd = "samtools merge " . $ofile . " $ifiles\n";
-		$cmd .= "if  [ -f $ofile ] \&\&[ -s $ofile ]; ";
-		$cmd .= "then" . "\nrm -f $ifiles \nfi\n";
+
+		if (
+			scalar(
+				@tmp = $SLURM->get_files_from_path(
+					$outpath, $chr . "_OP_*$slice.bam"
+				)
+			) == 1
+		  )
+		{
+			$cmd = "mv $tmp[0] $ofile\n";
+		}
+		else {
+			$ifiles =
+			  File::Spec->catfile( $tmp_path, $chr . "_OP_*$slice.bam" );
+
+			$cmd = "samtools merge " . $ofile . " $ifiles\n";
+			$cmd .= "if  [ -f $ofile ] \&\&[ -s $ofile ]; ";
+			$cmd .= "then" . "\nrm -f $ifiles \nfi\n";
+
+		}
 
 		print "cmd run (" . DateTime->now()->time() . "): " . $cmd . "\n";
 		if ( !$debug ) {
 			system($cmd );
 		}
+
 	}
 	$pm->finish;
 }
@@ -299,4 +322,9 @@ print "Duration: "
   . join( ":",
 	$end->subtract_datetime($start)->in_units( 'days', 'hours', 'seconds' ) )
   . "\n";
+
+sub get_files_from_path {
+	my ( $path, @matches ) = @_;
+	return $SLURM->get_files_from_path( $path, @matches );
+}
 

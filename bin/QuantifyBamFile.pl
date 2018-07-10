@@ -183,7 +183,7 @@ my $self = {
 my $fm = root->filemap($outfile);
 mkdir( $fm->{'path'} ) unless ( -d $fm->{'path'} );
 
-open( LOG, ">$outfile.log" ) or die $!;
+open( LOG, ">$outfile.log" ) or die "I could not create the log file '$outfile.log'\n$!\n";
 print LOG $task_description . "\n";
 
 print "I am processing file '$infile'\n";
@@ -974,7 +974,7 @@ sub get_matching_ids {
 	if ( $self->{'last_start'} > $end ) {
 		## shit - that should not be possible!
 		## better save than sorry:
-		warn "reinit end and next_start (".($self->{'last_start'} - $end)."bp)";
+		#warn "reinit end and next_start (".($self->{'last_start'} - $end)."bp)";
 		$self->{'end'} = $self->{'next_start'} = 0;
 	}
 	$self->{'last_start'} = $start if ( $update );

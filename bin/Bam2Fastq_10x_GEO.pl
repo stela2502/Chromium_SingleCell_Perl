@@ -57,25 +57,24 @@ my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
-
-my ( $help, $debug, $database, @infiles, @options, $outpath, $options);
+my ( $help, $debug, $database, @infiles, @options, $outpath, $options );
 
 Getopt::Long::GetOptions(
-	 "-infiles=s{,}"    => \@infiles,
-	 "-outpath=s"       => \$outpath,
-	  "-options=s{,}"   => \@options,
+	"-infiles=s{,}" => \@infiles,
+	"-outpath=s"    => \$outpath,
+	"-options=s{,}" => \@options,
 
-	 "-help"             => \$help,
-	 "-debug"            => \$debug
+	"-help"  => \$help,
+	"-debug" => \$debug
 );
 
-my $warn = '';
+my $warn  = '';
 my $error = '';
 
-unless ( -f $infiles[0]) {
+unless ( -f $infiles[0] ) {
 	$error .= "the cmd line switch -infiles is undefined!\n";
 }
-unless ( defined $outpath) {
+unless ( defined $outpath ) {
 	$error .= "the cmd line switch -outpath is undefined!\n";
 }
 
@@ -83,43 +82,38 @@ unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
 }
 
-
-if ( $help ){
-	print helpString( ) ;
+if ($help) {
+	print helpString();
 	exit;
 }
 
-if ( $error =~ m/\w/ ){
-	helpString($error ) ;
+if ( $error =~ m/\w/ ) {
+	helpString($error);
 	exit;
 }
 
 sub helpString {
 	my $errorMessage = shift;
-	$errorMessage = ' ' unless ( defined $errorMessage); 
+	$errorMessage = ' ' unless ( defined $errorMessage );
 	print "$errorMessage.\n";
-	pod2usage(q(-verbose) => 1);
+	pod2usage( q(-verbose) => 1 );
 }
-
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
 	$options->{ $options[$i] } = $options[ $i + 1 ];
 }
 
+my ($task_description);
 
-my ( $task_description);
-
-$task_description .= 'perl '.$plugin_path .'/Bam2Fastq_10x_GEO.pl';
-$task_description .= " -infiless '".join("' '",@infiles)."'" if (defined $infiles[0]);
-$task_description .= " -outfile '$outpath'" if (defined $outpath);
-$task_description .= ' -options \'' . join("' '", (%$options) ) . "'";
-
+$task_description .= 'perl ' . $plugin_path . '/Bam2Fastq_10x_GEO.pl';
+$task_description .= " -infiless '" . join( "' '", @infiles ) . "'"
+  if ( defined $infiles[0] );
+$task_description .= " -outfile '$outpath'" if ( defined $outpath );
+$task_description .= ' -options \'' . join( "' '", (%$options) ) . "'";
 
 use stefans_libs::Version;
 my $V = stefans_libs::Version->new();
-
-
 
 mkdir($outpath) unless ( -d $outpath );
 open( LOG,
@@ -127,7 +121,7 @@ open( LOG,
 	  . $$
 	  . "_SplitToCells.pl.log" )
   or die $!;
-print LOG '#library version '.$V->version( 'Chromium_SingleCell_Perl' )."\n";
+print LOG '#library version ' . $V->version('Chromium_SingleCell_Perl') . "\n";
 print LOG $task_description . "\n";
 close(LOG);
 
@@ -135,33 +129,74 @@ $options->{'sname'} ||= "unknown";
 
 ## Do whatever you want!
 
-my ( $counter, $OUT, $filtered_out, $total_reads, $entry);
+my ( $counter, $OUT, $filtered_out, $total_reads, $entry,
+	@Interesting_Bam_IDS, $bam_re_search );
 
 $entry = stefans_libs::FastqFile::FastqEntry->new();
 
+sub get_Interesting_Bam_IDS {
+	my (@bam_line) = @_;
+	unless ( @Interesting_Bam_IDS == 2 ) {
+
+		#print "I need to re -identify the bam columns!\n";
+		for ( my $i = 0 ; $i < @bam_line ; $i++ ) {
+			my $val = $bam_line[$i];
+			if ( scalar( split( ":", $val ) ) == 3 ) {
+
+				#warn "got a 3 '$val'\n";
+				if ( $val =~ m/C[BR]:Z:([AGCTN]+)-?\d*$/ ) {
+					$Interesting_Bam_IDS[0] = $i;
+				}
+				if ( $val =~ m/U[BR]:Z:([ACTGN]+)$/ ) {
+					$Interesting_Bam_IDS[1] = $i;
+				}
+			}
+		}
+	}
+	return @Interesting_Bam_IDS;
+}
+
 sub sample_and_umi_cellranger {
 	my (@bam_line) = @_;
-	my ( $sample_name, $UMI );
-	#print join("\t", @bam_line )."\n";
-	foreach (@bam_line) {
-		if (scalar( split(":", $_)) == 3 ) {
-			#print "\t$_";
-		}else {
-			next;
-		}
-		#$sample_name = $1 if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/);
-		if ( $_ =~ m/C[BR]:Z:([AGCTN]+)-?\d*$/ ){
-			#print "Matching to sample $_\n";
-			$sample_name = $1 ;
-		}
-		#$sample_name = $1 if ( $_ =~ m/CB:Z:([AGCTN]+)$/ );
-		if ( $_ =~ m/U[BR]:Z:([ACTGN]+)$/ and ! defined $UMI){
-			#print "Matching UMI $_\n";
-			$UMI  = $1 ;
-		}
-		
+	my ( $sample_name, $UMI, @IDs );
+
+	@IDs = &get_Interesting_Bam_IDS(@bam_line);
+
+	#warn "I got the IDS: ".join(", ", @IDs)."\n";
+	if ( defined $bam_line[ $IDs[0] ]
+		and $bam_line[ $IDs[0] ] =~ m/C[BR]:Z:([AGCTN]+)-?\d*$/ )
+	{
+		$sample_name = $1;
 	}
-	#print "\n";
+	if ( defined $bam_line[ $IDs[1] ]
+		and $bam_line[ $IDs[1] ] =~ m/U[BR]:Z:([ACTGN]+)$/ )
+	{
+		$UMI = $1;
+	}
+
+	unless ( defined $sample_name and defined $UMI ) {
+		if ( join( "--", @bam_line ) =~ m/C[BR]:Z:([AGCTN]+)/ ) {
+
+#warn "I have the bam ids ". join(", ", @IDs)." ($sample_name and $UMI)\n".join("--",@bam_line)."\n";
+			## retry once
+			@Interesting_Bam_IDS = undef;
+
+#warn "I did not get usable IDs in the line ".join(" ",@bam_line)."\n" unless ( defined $IDs[0] );
+			$bam_re_search++;
+			@IDs = &get_Interesting_Bam_IDS(@bam_line);
+			if ( defined $bam_line[ $IDs[0] ]
+				and $bam_line[ $IDs[0] ] =~ m/C[BR]:Z:([AGCTN]+)-?\d*$/ )
+			{
+				$sample_name = $1;
+			}
+			if ( defined $bam_line[ $IDs[1] ]
+				and $bam_line[ $IDs[1] ] =~ m/U[BR]:Z:([ACTGN]+)$/ )
+			{
+				$UMI = $1;
+			}
+		}
+		 #die "I have the bam ids ". join(", ", @IDs)." ($sample_name and $UMI)\n".join("--",@bam_line)."\n";
+	}
 	return ( $sample_name, $UMI );
 }
 my ( $sample_name, $UMI );
@@ -186,22 +221,22 @@ sub filter_read {
 	if ( $read->sequence() =~ m/([Tt]{5}[Tt]+)$/ ) {
 		$read->trim( 'end', length($1) );
 	}
-		
+
 	## filter reads with high ployX (>= 50%)
 
-#	my $str = $read->sequence();
-#	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
-#		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
-#			my $by = 'N' x length($repl);
-#			$str =~ s/$repl/$by/;
-#		}
-#	}
-#	my $count = $str =~ tr/N/n/;
-#
-#	if ( $count != 0 and $count / length($str) > 0.5 ) {
-#		$read ->sequence('AAG'); ## returning undef kills that script!
-#		return $read;
-#	}
+	#	my $str = $read->sequence();
+	#	foreach ( 'Aa', 'Cc', 'Tt', 'Gg' ) {
+	#		foreach my $repl ( $str =~ m/[$_]{$min_length}[$_]*/g ) {
+	#			my $by = 'N' x length($repl);
+	#			$str =~ s/$repl/$by/;
+	#		}
+	#	}
+	#	my $count = $str =~ tr/N/n/;
+	#
+	#	if ( $count != 0 and $count / length($str) > 0.5 ) {
+	#		$read ->sequence('AAG'); ## returning undef kills that script!
+	#		return $read;
+	#	}
 
 	## return filtered read
 
@@ -209,30 +244,36 @@ sub filter_read {
 }
 
 sub filter {
-	shift; ## get rid of the BAMfile object
+	shift;    ## get rid of the BAMfile object
 	my @bam_line = split( "\t", shift );
 	return if ( $bam_line[0] =~ m/^\@/ );
-	$total_reads ++;
+	$total_reads++;
 	if ( $total_reads % 1e5 == 0 ) {
 		print ".";
 	}
 	if ( $total_reads % 1e7 == 0 ) {
 		print "\n" . ( $total_reads / 1e+7 ) . "e+7:";
+		$OUT = &next_outfile($OUT); ## re-open the outfile to split huge files into smaller parts.
 	}
-	( $sample_name, $UMI ) = &sample_and_umi_cellranger( @bam_line );
-	
+	( $sample_name, $UMI ) = &sample_and_umi_cellranger(@bam_line);
+
 	if ( defined $UMI and defined $sample_name ) {
+
 		#print "process next line and got '$sample_name' and '$UMI'\n";
-		$entry ->clear();
+		$entry->clear();
+
 		#$entry = stefans_libs::FastqFile::FastqEntry->new();
-		$entry->name ( '@'."$bam_line[0]:".join("_", 'C','ACGT','C',$sample_name,$UMI));
-		$entry->sequence($bam_line[9]);
-		$entry->quality($bam_line[10]);
+		$entry->name( '@'
+			  . "$bam_line[0]:"
+			  . join( "_", 'C', 'ACGT', 'C', $sample_name, $UMI ) );
+		$entry->sequence( $bam_line[9] );
+		$entry->quality( $bam_line[10] );
 		$entry = filter_read($entry);
-		if ( defined $entry and  length( $entry->sequence() ) > 20 ) {
+		if ( defined $entry and length( $entry->sequence() ) > 20 ) {
 			$entry->write($OUT);
 			$counter->{$sample_name}++;
-		}else {
+		}
+		else {
 			$filtered_out++;
 		}
 	}
@@ -241,62 +282,81 @@ sub filter {
 		$filtered_out++;
 	}
 
-};
+}
 
 sub byFileSize {
 	-s $b <=> -s $a;
 }
 
-
 sub FileSizeOrder {
 	my @files = @_;
-	my $i = 0;
-	my $order = { map { $_ => $i ++ }  @files  } ; 
+	my $i     = 0;
+	my $order = { map { $_ => $i++ } @files };
 	my @ret;
 	foreach ( sort byFileSize @files ) {
-		push( @ret, $order->{$_});
+		push( @ret, $order->{$_} );
 	}
 	return @ret;
 }
 
 my ($ofile);
 
-if ( -t STDOUT ) { ## for the progress bar
+if ( -t STDOUT ) {    ## for the progress bar
 	$| = 1;
 }
-print " 0e+7:";
 
 $entry = stefans_libs::FastqFile::FastqEntry->new();
-print "Started a summary run on ".scalar(@infiles)." file sets\n";
-	
-	$ofile = "$outpath/$options->{'sname'}.annotated.fastq.gz";
-	open( $OUT, "| /bin/gzip -c > $ofile" )
-	  or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
+print "Started a summary run on " . scalar(@infiles) . " file sets\n";
 
-	my $bam_file = stefans_libs::BAMfile->new();
-	$bam_file ->{'debug'} = 1 if ( $debug ); #restrict output to first 1000 reads
+my $i;
+$ofile = "$outpath/$options->{'sname'}.annotated.$i.fastq.gz";
 
-	for ( my $i = 0 ; $i < @infiles ; $i++ ) {
-		print "Process file $i '$infiles[$i]'\n";	
-		$bam_file->filter_file( $infiles[$i], \&filter );
+$OUT = &next_outfile();
 
-	}
+#open( $OUT, "| /bin/gzip -c > $ofile" )
+#  or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
 
-	close($OUT);
+my $bam_file = stefans_libs::BAMfile->new();
+$bam_file->{'debug'} = 1 if ($debug);    #restrict output to first 1000 reads
+$bam_re_search = 0;
+for ( my $i = 0 ; $i < @infiles ; $i++ ) {
+	print "Process file $i '$infiles[$i]'\n";
+	print " 0e+7:";
+	$bam_file->filter_file( $infiles[$i], \&filter );
+	print "Bam internal re-search count = "
+	  . ( $bam_re_search / $total_reads )
+	  . " (low is good)\n";
+}
 
-	open( OUT, ">$outpath/$options->{'sname'}.per_cell_read_count.xls" )
-	  or die
+close($OUT);
+
+open( OUT, ">$outpath/$options->{'sname'}.per_cell_read_count.xls" )
+  or die
 "I could not open the file '$outpath/$options->{'sname'}.per_cell_read_count.xls'\n$!\n";
-	print OUT "#total of $total_reads reads processed\n";
-	print OUT "#no sample/UMI information in $filtered_out reads\n";
-	print OUT "Cell_ID\tcount\n";
-	foreach my $key ( sort keys %$counter ) {
-		print OUT "$key\t$counter->{$key}\n";
-	}
-	close(OUT);
-	print "Finished with fastq file '$ofile'\n";
-	print "A total of $total_reads reads were processed\n";
-	print "and $filtered_out reads had no sample/UMI information and were filtered out\n";
-	print sprintf("%.3f",(($total_reads - $filtered_out)/ $total_reads ) * 100 )."% reads could be used\n";
-	
+print OUT "#total of $total_reads reads processed\n";
+print OUT "#no sample/UMI information in $filtered_out reads\n";
+print OUT "Cell_ID\tcount\n";
+foreach my $key ( sort keys %$counter ) {
+	print OUT "$key\t$counter->{$key}\n";
+}
+close(OUT);
+print "Finished with fastq file '$ofile'\n";
+print "A total of $total_reads reads were processed\n";
+print
+"and $filtered_out reads had no sample/UMI information and were filtered out\n";
+print
+  sprintf( "%.3f", ( ( $total_reads - $filtered_out ) / $total_reads ) * 100 )
+  . "% reads could be used\n";
 
+
+
+sub next_outfile {
+	my ( $out ) = shift;
+	$i ||= 0;
+	$i ++;
+	close ( $out) if ( defined $out );
+	$ofile = "$outpath/$options->{'sname'}.annotated.$i.fastq.gz";
+	open( $out, "| /bin/gzip -c > $ofile" )
+  	    or die "I could not open the out pipe '| /bin/gzip -c > $ofile'\n$!\n";
+  	return $out;
+}
