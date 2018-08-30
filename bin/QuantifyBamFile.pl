@@ -206,7 +206,24 @@ if ( -f $outfile ) {
 my $result = stefans_libs::result_table->new(
 	{
 		filename               => $outfile,
-		'data_storage_spliced' => 1,
+		'data_storage_spliced' => 0,
+
+		#	'table_path'           => $drop_chr # not use - might crap things up
+	}
+);
+
+my $spliced = stefans_libs::result_table->new(
+	{
+		filename               => $fm->{'path'} ."/", $fm->{'filename_base'}."_spliced.sqlite",
+		'data_storage_spliced' => 0,
+		#	'table_path'           => $drop_chr # not use - might crap things up
+	}
+);
+
+my $unspliced = stefans_libs::result_table->new(
+	{
+		filename               => $fm->{'path'} ."/", $fm->{'filename_base'}."_unspliced.sqlite",
+		'data_storage_spliced' => 0,
 
 		#	'table_path'           => $drop_chr # not use - might crap things up
 	}
@@ -418,11 +435,14 @@ sub sample_and_umi_cellranger {
 	my ( $sample_name, $UMI );
 	foreach (@bam_line) {
 
-		#$sample_name = $1 if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/);
-		$sample_name = $1 if ( $_ =~ m/CR:Z:([AGCTN]+)$/ );
-		if ( $_ =~ m/UR:Z:([ACTGN]+)$/ ){
+		if ( $_ =~m/CB:Z:([ACTGN]+)-?\d*$/){
+			$sample_name = $1 
+		}elsif ( $_ =~ m/CR:Z:([AGCTN]+)$/ ) {
+			$sample_name = $1
+		}
+		if ( $_ =~ m/UB:Z:([ACTGN]+)$/ ){
 			$UMI  = $1 ;
-		}elsif ( $_ =~ m/UB:Z:([ACTGN]+)$/ ) {
+		}elsif ( $_ =~ m/UR:Z:([ACTGN]+)$/ ) {
 			$UMI  = $1 ;
 		}
 		
@@ -504,9 +524,19 @@ sub filter {
 	## start with the real matching
 	my @read_areas = &result_areas( $bam_line[3], $bam_line[5] );
 	my @matching_IDs =  &get_matching_ids( $gtf_obj, $bam_line[2], @{$read_areas[0]}[0], @{$read_areas[0]}[1], 1 ); ## 1 == update
+	my @unspliced_IDs;
+	@matching_IDs = @{$matching_IDs[0]};
+	@unspliced_IDs = @{$matching_IDs[1]};
 	
-	if ( @matching_IDs == 0 ) { ## the first part of the match did not overlap an exon - kick it?
-		warn "No matching featuires!\n"if ( $bugfix );
+	if ( @matching_IDs == 0 ) { ## the first part of the match did not match an exon - kick it?
+	    if ( @unspliced_IDs > 0 ){
+	    	## we have an unspliced read, that does not match another overlapping exon
+	    	## or better a read from an unspliced nascent RNA - COOL!
+	    	## Store that somewhere
+	    	my @matching_Names = &get_reporter_ids( $gtf_obj, @unspliced_IDs );
+	    	map{ &add_2( $sample_name, $_, $unspliced ) } @matching_Names;
+	    }
+		warn "No matching features!\n"if ( $bugfix );
 		return; # yes kick it!
 #		$Seq = 0;
 #		map { $Seq += $_ }
@@ -555,7 +585,10 @@ sub filter {
 			);
 			}
 			if ( @matching_Names == 0 ) {
-				#warn "I have lost all initial mapping genes for the read ".join("\t", @bam_line[0,2,5,9,10])."\n";
+				##This does mean I have a read starting in a exon, but ending in an intron
+				## https://www.biorxiv.org/content/early/2017/10/19/206052
+				## I probably should collect this info, too
+				
 				return;
 			}
 			else{
@@ -594,10 +627,14 @@ unless ($debug) {    ## debugging the 10x pipeline here
 
 ##And here is where I stop the whole process this time as all other steps can be done in R.
 	if ($asDatabase) {
-		$result->print2file( undef, 950 );
+		$result->print2file( );
+		$spliced->print2file( );
+		$unspliced->print2file( );
 	}
 	else {
-		$result->print2table( undef, 950 );
+		$result->print2table( );
+		$spliced->print2table( );
+		$unspliced->print2table( );
 	}
 }
 else {
@@ -635,333 +672,14 @@ else {
 }
 &measure_time_and_state("Saving th outfiles");
 print "The file '$outfile' now contains all results from bam file '$infile'\n";
-exit(1);
-
-#print "drop me 1". $result->AsString();
-## now I can drop the quantifier and the gff
-
-$gtf_obj = undef;
-
-### done with the quantification - now the error check starts
-
-my ( $sample_row_id, @export, @sampleNames, $tmp );
-
-$| = 0;    ## buffer file output again (default)
-
-if ( $outfile =~ m/txt$/ ) {
-	$outfile =~ s/txt$/xls/;
-}
-unless ( $outfile =~ m/xls$/ ) {
-	$outfile .= ".xls";
-}
-$tmp = $outfile;
-$tmp =~ s/.xls$//;
-
-if ($debug) {
-	$result->write_table( $tmp . ".original.xls" );
-}
-
-$runs = 0;
-print "\nFinished with quantification ("
-  . $sample_table->Rows()
-  . " samples and "
-  . $result->Rows()
-  . " genes)\n";
-
-## calculate the sample UMI count and add it to the summary table
-
-if ($debug) {
-	$sample_table->write_table( $tmp . "sample_table_original" );
-	&measure_time_and_state("DEBUG: Writing of the raw data files");
-}
-
-print "Syncing sample table and data table\n";
-my $i = 0;
-$self->{'samples_in_result'} = { map { $_ => $i++ } @{ $result->{'header'} } };
-
-#print "\$exp = ".root->print_perl_var_def( $self->{'samples_in_result'} ).";\n";
-
-$sample_table->drop_rows( 'sample tag',
-	sub { !defined $self->{'samples_in_result'}->{ $_[0] } } );
-
-if ($debug) {
-	$sample_table->write_table( $tmp . "sample_table_only_used_samples" );
-}
-
-$sample_table =
-  $sample_table->Sort_by( [ [ 'sample tag', $self->{'samples_in_result'} ] ] );
-
-if ($debug) {
-	my $tmp_table = data_table->new();
-	$tmp_table->Add_2_Header( [ 'samples', 'results' ] );
-	my $OK = 1;
-	for ( my $i = 0 ; $i < $sample_table->Columns() ; $i++ ) {
-
-		#print "new entry in $tmp_table->{'data'} at position $i = \n";
-		#print "\t [ \n\n\t\t".@{@{$sample_table->{'data'}}[$i]}[0].", \n";
-		#print "\t\t".@{$result->{'header'}}[($i*2) +1 ]." ];\n";
-		@{ $tmp_table->{'data'} }[$i] = [
-			@{ @{ $sample_table->{'data'} }[$i] }[0],
-			@{ $result->{'header'} }[ ( $i * 2 ) + 1 ]
-		];
-		$OK = 0
-		  unless ( @{ @{ $sample_table->{'data'} }[$i] }[0] eq
-			@{ $result->{'header'} }[ ( $i * 2 ) + 1 ] );
-	}
-	die "The order has not been changed in the right way!\n" unless ($OK);
-}
-
-$sample_table->write_table( $tmp . "sample_table_original" );
-
-&measure_time_and_state("Syncing the sample and data tables");
-
-delete( $result->{'index_length'}->{'Gene_ID'} );
-delete( $result->{'index'}->{'Gene_ID'} );
-
-my $Gene_IDs = $result->GetAsArray('Gene_ID');
-$result->drop_column('Gene_ID');
-foreach ( keys %{ $self->{'samples_in_result'} } ) {
-	$self->{'samples_in_result'}->{$_}--;
-}
-$| = 1;
-print "Calculating colum sums for " . ( $sample_table->Rows() ) . " samples:\n";
-my $data_col_name;
-
-## considder to use use PDL::Sparse; here andset the none 0 values 'by hand'
-## should be faster that the 30 min it takes to create the full PDL (276318 x 16876) piddle.
-$self->{PDL}      = long( @{ $result->{'data'} } );
-$self->{PDL}      = $self->{PDL}->transpose();
-$result->{'data'} = undef;
-
-#print "this is the gene pdl: ".$self->{PDL};
-
-&measure_time_and_state("Creating the PDL");
-
-my $sums = $self->{PDL}->sumover();
-$sums = unpdl($sums);
-
-#print "this is the summary over the pdl: ". join(", ",@$sums)."\n";
-
-$sample_table->add_column( 'total UMI count',
-	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
-$sample_table->add_column( 'total UMI count no merge',
-	@$sums[ ( map { $_ * 2 } 0 .. ( $sample_table->Rows() - 1 ) ) ] );
-$sample_table->add_column( 'spliced UMI count',
-	@$sums[ map { $_ * 2 + 1 } 0 .. ( $sample_table->Rows() - 1 ) ] );
-$sample_table->add_column( 'spliced UMI count no merge',
-	@$sums[ map { $_ * 2 + 1 } 0 .. ( $sample_table->Rows() - 1 ) ] );
-
-#print "The finished sample table:\n".$sample_table->AsString()."\n";
-
-&measure_time_and_state(
-	"Calculate the sum over " . $sample_table->Rows() . " samples" );
-
-## now I need to merge the samples!
-
-print "\nStarting to merge cells that share a UMI in an exon\n" if ($debug);
-
-$sample_table->Add_2_Header( [ 'merged to', 'merge evidence', 'stringdist' ] );
-
-foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
-	&merge_cells( split( " ", $_ ) );
-}
-delete( $self->{'mergable'} );
-
-#print "The finished sample table after merge:\n".$sample_table->AsString()."\n" if ( $debug );
-
-&measure_time_and_state(
-	"\nMering cells where the same UMI tagged the same transcript");
-
-## as the new merge function works on the PDL data I now need to copy the pdl data back to the result table
-
-my $subsetted_data = data_table->new();
-my @wanted_positions;
-
-my $total_UMI_count =
-  $sample_table->GetAsHash( 'sample tag', 'total UMI count' );
-
-for ( my $i = 0 ; $i < $result->Columns() - 1 ; $i++ ) {
-	unless ( @{ $result->{'header'} }[$i] =~ m/merged/ ) {
-		my $tmp = @{ $result->{'header'} }[$i];
-		$tmp =~ s/ spliced//;
-		$wanted_positions[@wanted_positions] = $i
-		  if ( $total_UMI_count->{$tmp} >= $options->{'min_UMIs'} );
-	}
-}
-
-$subsetted_data->Add_2_Header(
-	[ @{ $result->{'header'} }[@wanted_positions] ] );
-
-if ($debug) {
-	print "I identified these wanted columns from the result table: "
-	  . join( ", ", @wanted_positions[ 0 .. 5 ] )
-	  . "\n ... \n"
-	  . join( ", ",
-		@wanted_positions[ ( @wanted_positions - 6 )
-		  .. ( @wanted_positions - 1 ) ] )
-	  . "\n";
-	print "I selected "
-	  . scalar(@wanted_positions)
-	  . " samples + spliced samples from the original table with the first 10 snames:\n"
-	  . join( ", ", @{ $subsetted_data->{'header'} }[ 0 .. 9 ] )
-	  . "\n ... \n"
-	  . join( ", ",
-		@{ $subsetted_data->{'header'} }
-		  [ ( @wanted_positions - 6 ) .. ( @wanted_positions - 1 ) ] )
-	  . "\n";
-}
-
-$subsetted_data->{'data'} =
-  unpdl( $self->{'PDL'}->xchg( 0, 1 )->dice_axis( 0, \@wanted_positions ) );
-
-$subsetted_data->add_column( 'Gene_ID', @$Gene_IDs );
-
-print "The subsetted pdl data:" . $subsetted_data->AsString() . "\n"
-  if ($debug);
-
-#$result->{'data'} = unpdl($self->{'PDL'}->xchg(0,1));
-
-$result        = undef;
-$result        = $subsetted_data;
-$self->{'PDL'} = undef;
-&measure_time_and_state("Restoring data table from merged PDL");
-
-$sample_table->write_table( $tmp . ".samples_after_sum_add.xls" );
-
-$sample_table->drop_rows( 'merged to', sub { defined $_[0] } );
-
-print "The sample table after a strange drop_rows:\n"
-  . $sample_table->AsString() . "\n"
-  if ($debug);
-print "And the final result table:\n" . $result->AsString() . "\n" if ($debug);
-
-$| = 0;
-
-if ($debug) {
-	open( my $MERGE, ">$tmp.merge.log" ) or die $!;
-	print $MERGE "to\t" . join( "\t", map { "from $_" } 1 .. 40 ) . "\n";
-	foreach my $target ( sort keys %{ $self->{'cell_id_to_name'} } ) {
-		print $MERGE $target . "\t"
-		  . join( "\t", sort keys %{ $self->{'cell_id_to_name'}->{$target} } )
-		  . "\n";
-	}
-	close($MERGE);
-}
-
-my $SQlite_db = stefans_libs::database::Chromium_SingleCell::datavalues->new(
-	{ 'file' => $tmp . ".original_merged.db", 'data_storage_spliced' => 1 } );
-
-$SQlite_db->store_data_table( $result, 'Gene_ID' );
-
-if ($debug) {
-	$result->write_table( $tmp . ".original_merged.xls" );
-}
-
-print "\ncollapse the data to the unique cells only\n";
-
-## write the data
-
-$result->define_subset( 'keep',
-	[ grep ( !/merged/, @{ $result->{'header'} } ) ] );
-@export      = $result->Header_Position('keep');
-@sampleNames = @{ $result->{'header'} }[@export];
-
-#$sample_table = $sample_table->select_where( 'total UMI count',
-#	sub { ( defined $_[0] and $_[0] > 0 ) } );
-
-$sample_table = $sample_table->select_where( 'total UMI count',
-	sub { ( defined $_[0] and $_[0] >= $options->{'min_UMIs'} ) } );
-
-&measure_time_and_state(
-"dropping merged , empty and low read count samples from the result and samples tables"
-);
-
-eval {
-	open( my $Mreport, ">$tmp.merge_report.txt" );
-	foreach ( keys %{ $self->{'cell_id_to_name_md5'} } ) {
-		$self->{'cell_id_to_name_md5'}->{$_} ||= 0;
-		print $Mreport "$self->{'cell_id_to_name_md5'}->{$_} $_\n";
-	}
-	close($Mreport);
-};
-
-&measure_time_and_state("Writing the merge report to '$tmp.merge_report.txt'");
-
-my $msg =
-    "\nFinished with mapping: "
-  . $sample_table->Rows()
-  . " samples and "
-  . $result->Rows()
-  . " $options->{'report_on'}'s detected\n";
-
-print $msg;
-
-$sample_table->write_table( $tmp . ".samples.xls" );
-
-print LOG $msg;
-
-#previousely run:
-#$result->define_subset( 'all reads', [ grep ( !/spliced/, @sampleNames )]);
-#$result->define_subset( 'spliced reads', [ $sampleNames[0], grep ( /spliced/, @sampleNames )]);
-
-@sampleNames = @{ $result->{'header'} };
-$result->define_subset( 'all reads', [ grep ( !/spliced/, @sampleNames ) ] );
-$result->define_subset( 'spliced reads',
-	[ $sampleNames[0], grep ( /spliced/, @sampleNames ) ] );
-
-my ( @all_reads, @spliced_reads );
-@all_reads     = $result->Header_Position('all reads');
-@spliced_reads = $result->Header_Position('spliced reads');
-
-open( my $OUT, ">$outfile" )
-  or die "I could not create the outfile '$outfile'\n$!\n";
-
-open( my $SPLICED, ">$tmp.spliced.xls" )
-  or die "I could not create the spliced reads data '$tmp.spliced.xls'\n$!\n";
-
-print $OUT join( "\t", @{ $result->{'header'} }[@all_reads] ) . "\n";
-print $SPLICED join( "\t", @{ $result->{'header'} }[@spliced_reads] ) . "\n";
-
-for ( my $i = 0 ; $i < $result->Rows() ; $i++ ) {
-	print $OUT join(
-		"\t",
-		map {
-			unless ($_) { '' }
-			else        { $_ }
-		} @{ @{ $result->{'data'} }[$i] }[@all_reads]
-	) . "\n";
-	print $SPLICED join(
-		"\t",
-		map {
-			unless ($_) { '' }
-			else        { $_ }
-		} @{ @{ $result->{'data'} }[$i] }[@spliced_reads]
-	) . "\n";
-
-}
-
-close($OUT);
-close($SPLICED);
-
-&measure_time_and_state("Saving data to '$outfile' and '$tmp.spliced.xls'");
-
-$start = $first_start;
-
-&measure_time_and_state("Total run");
-
-$tmp =
-"In total I have processed $self->{'total_reads'} and identfied $self->{'duplicates'} UMI duplicates [6bp ("
-  . sprintf( "%.3f", ( $self->{'duplicates'} / $self->{'total_reads'} ) * 100 )
-  . "%)\n";
-print LOG $tmp;
-print $tmp;
-print "Done\n";
 
 close(LOG);
 
+exit(1);
+
 sub get_matching_ids {
 	my ( $gtf, $chr, $start, $end, $update ) = @_;
-	my ( @IDS, $nextID );
+	my ( @IDS, $nextID, @unspliced );
 	unless ( $self->{'chr'} eq $chr ) {
 		$self->{'chr'}        = $chr;
 		$self->{'end'}        = 0;
@@ -1024,6 +742,8 @@ sub get_matching_ids {
 				if ( $starts[$i] <= $start and $ends[$i] >= $start ) {
 					## matching
 					push( @OK, $IDS[$i] );
+				}elsif ( $start < $ends[$i] and $end > $starts[$i] ) {
+					push ( @unspliced, $IDS[$i] );
 				}
 			}
 		}
@@ -1066,7 +786,7 @@ sub get_matching_ids {
 		die "I assume I should never get here!?\n";
 	}
 	$self->{'last_IDS'} = [@IDS];
-	return @IDS;
+	return \@IDS, \@unspliced ;
 }
 
 sub reinit_UMI {
@@ -1319,51 +1039,40 @@ sub merge_cells {
 
 }
 
+sub add_2 {
+	my ( $sampleID, $geneIDs, $where ) = @_;
+	foreach my $gene_id (@$geneIDs) {
+		$where->AddDataset(
+			{ 'Gene_ID' => $gene_id, 'Sample_ID' => $sampleID, 'value' => 1 },
+			1 );    ## add to existing values
+	}
+	if ( $where->Lines() > 1000 ) {
+		#print "I am storing 1950 gene results in the tables\n";
+		if ($asDatabase) {
+			$where->print2file( undef, 950 );
+		}
+		else {
+			$where->print2table( undef, 950 );
+		}
+
+	}
+}
+
 sub add_to_summary {
 	my ( $sampleID, $geneIDs, $is_spliced, $start ) = @_;
 	$is_spliced = 1 if ($is_spliced);
 
-#	print "\tI add to sample $sampleID and gene "
-#	  . join( ",", @$geneIDs )
-#	  . " is_splice==$is_spliced $start\n";
 	warn "\tI add to sample $sampleID and gene "
 	  . join( ",", @$geneIDs )
 	  . " is_splice==$is_spliced\n"
 	  if ($bugfix);
-
-	#$sampleID = $self->{'cell_id_to_name'}->{$sampleID} || $sampleID;
-
 	foreach my $gene_id (@$geneIDs) {
-
-		$result->AddDataset(
-			{ 'Gene_ID' => $gene_id, 'Sample_ID' => $sampleID, 'value' => 1 },
-			1 );    ## add to existing values
+		&add_2( $sampleID, $geneIDs, $result);
 
 		if ($is_spliced) {
-			$result->AddDataset(
-				{
-					'Gene_ID'   => $gene_id,
-					'Sample_ID' => $sampleID . " spliced",
-					'value'     => 1
-				},
-				1
-			);      ## add to existing values
+			&add_2( $sampleID, $geneIDs, $spliced);
 		}
 	}
-
-	# this is a horrible performance killer!
-	if ( $result->Lines() > 1000 ) {
-		## Ok we shurely can store - say 50 of them in the database and get rid of the data here - or?
-		print "I am storing 1950 gene results in the tables\n";
-		if ($asDatabase) {
-			$result->print2file( undef, 950 );
-		}
-		else {
-			$result->print2table( undef, 950 );
-		}
-
-	}
-
 }
 
 sub lintersect {
