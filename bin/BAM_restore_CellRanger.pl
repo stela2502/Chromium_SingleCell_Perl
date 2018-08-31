@@ -46,16 +46,18 @@ use Pod::Usage;
 use strict;
 use warnings;
 
+use stefans_libs::BAMfile;
+
 use FindBin;
 my $plugin_path = "$FindBin::Bin";
 
 my $VERSION = 'v1.0';
 
 
-my ( $help, $debug, $database, $infile, $outfile);
+my ( $help, $debug, $database, @infiles, $outfile);
 
 Getopt::Long::GetOptions(
-	 "-infile=s"    => \$infile,
+	 "-infile=s"    => \@infiles,
 	 "-outfile=s"    => \$outfile,
 
 	 "-help"             => \$help,
@@ -65,7 +67,7 @@ Getopt::Long::GetOptions(
 my $warn = '';
 my $error = '';
 
-unless ( defined $infile) {
+unless ( -f $infiles[0]) {
 	$error .= "the cmd line switch -infile is undefined!\n";
 }
 unless ( defined $outfile) {
@@ -95,10 +97,18 @@ sub helpString {
 my ( $task_description);
 
 $task_description .= 'perl '.$plugin_path .'/BAM_restore_CellRanger.pl';
-$task_description .= " -infile '$infile'" if (defined $infile);
+$task_description .= " -infile '".join("' '",@infiles)."'";
 $task_description .= " -outfile '$outfile'" if (defined $outfile);
 
-
+if ( @infiles == 1 and (! $infiles[0] =~m/.bam$/ )){
+	open ( IN, "<$infiles[0]" ) or die $!;
+	@infiles = undef;
+	while ( <IN> ) {
+		chmop();
+		push( @infiles, split(/[,;\s]+/, $_));
+	}
+	close ( IN );
+}
 
 use stefans_libs::Version;
 my $V = stefans_libs::Version->new();
@@ -107,7 +117,7 @@ mkdir( $fm->{'path'}) unless ( -d $fm->{'path'} );
 
 open ( LOG , ">$outfile.log") or die $!;
 print LOG '#library version Chromium_SingleCell_Perl '.$V->version( 'Chromium_SingleCell_Perl' )."\n";
-print LOG '#library version stefanl_libs-BAMfile'. $V->version( 'stefanl_libs-BAMfile' )."\n";
+print LOG '#library version stefanl_libs-BAMfile'. $V->version( 'stefans_libs-BAMfile' )."\n";
 print LOG $task_description."\n";
 close ( LOG );
 
@@ -129,11 +139,41 @@ my $filter = sub {
 	$line;
 };
 
-$worker -> apply_function (
-	$infile ,  
+## process the first file using the header
+my $OUT = $worker -> apply_function (
+	$infiles[0] ,  
 	$outfile, 
 	$filter 
 );
+
+my $filter2 = sub { 
+	my ( $BamFile, $line ) = @_;
+	unless ( $line =~m/^@/ ){
+		@bam_line = split( "\t", $line );
+		( $sample_name, $UMI ) = sample_and_umi_my(@bam_line);
+		@tmp = split(":", $bam_line[0]);
+		pop(@tmp);
+		$bam_line[0] = join(":", @tmp);
+		$line = join("\t", @bam_line, 'CB:Z:'.$sample_name, 'UB:Z:'.$UMI );
+	}else {
+		$line = ''; ## kick the header
+	}
+	#print $line."\n";
+	$line;
+};
+
+## process the first file using the header
+for ( my $i = 1; $i < @infiles; $i ++ ){
+	$OUT = $worker -> apply_function (
+		$infiles[$i] ,  
+		$outfile, 
+		$filter,
+		$OUT
+	);
+
+}
+
+close ( $OUT );
 
 sub sample_and_umi_my {
 	my (@bam_line) = @_;
