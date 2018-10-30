@@ -8,7 +8,7 @@ name "Chromium_SingleCell_Perl";
 version '0.01';
 author 'Stefan Lang <Stefan.Lang@med.lu.se>';
 
-requires 'Text::Levenshtein' => 0;
+#requires 'Text::Levenshtein' => 0;
 requires 'PDL' => 0;
 requires 'PDL::NiceSlice' => 0;
 

@@ -25,8 +25,8 @@
 =head1  SYNOPSIS
 
     BAM_restore_CellRanger.pl
-       -infile       :<please add some info!>
-       -outfile       :<please add some info!>
+       -infile       :a list of [sb]am files or a text file listing them
+       -outfile      :a bam outfile
 
 
        -help           :print this help
@@ -100,14 +100,17 @@ $task_description .= 'perl '.$plugin_path .'/BAM_restore_CellRanger.pl';
 $task_description .= " -infile '".join("' '",@infiles)."'";
 $task_description .= " -outfile '$outfile'" if (defined $outfile);
 
-if ( @infiles == 1 and (! $infiles[0] =~m/.bam$/ )){
+
+if ( @infiles == 1 and ( not $infiles[0] =~ m/[sb]am$/ )){
 	open ( IN, "<$infiles[0]" ) or die $!;
-	@infiles = undef;
+	my @tmp;
 	while ( <IN> ) {
-		chmop();
-		push( @infiles, split(/[,;\s]+/, $_));
+		chomp();
+		push( @tmp, split(/[,;\s]+/, $_));
 	}
 	close ( IN );
+	@infiles = @tmp;
+	print "Infiles changed to '".join("' '", @infiles)."'\n";
 }
 
 use stefans_libs::Version;
@@ -146,6 +149,8 @@ my $OUT = $worker -> apply_function (
 	$filter 
 );
 
+print "Finished with file '$infiles[0]'\n";
+
 my $filter2 = sub { 
 	my ( $BamFile, $line ) = @_;
 	unless ( $line =~m/^@/ ){
@@ -167,10 +172,10 @@ for ( my $i = 1; $i < @infiles; $i ++ ){
 	$OUT = $worker -> apply_function (
 		$infiles[$i] ,  
 		$outfile, 
-		$filter,
+		$filter2,
 		$OUT
 	);
-
+	print "Finished with file '$infiles[$i]'\n";
 }
 
 close ( $OUT );
