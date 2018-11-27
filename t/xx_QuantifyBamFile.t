@@ -37,7 +37,7 @@ $outfile = "$outpath/test";
 
 # with only 4 geens we are down to only half the samples.
 
-@options = ('min_UMIs', 10 );
+@options = ('min_UMIs', 0 );
 
 my $cmd =
     "perl "
@@ -54,7 +54,7 @@ my $cmd =
 . " -options " . join(' ', @options )
 . " -fastqPath $fastqPath"
 . " -sampleID TestSample"
-#. " -debug"
+#. " -bugfix"
 ;
 
 my $start = time;
@@ -79,22 +79,22 @@ $result_table ->line_separator(';');
 #}
 my $exp1 = {
   'ATAGACCGTGGTGTAG' => '1',
-  'ATAGACCGTGGTGTAG spliced' => '1',
+#  'ATAGACCGTGGTGTAG spliced' => '1',
   'CACAAACCACTTCTGC' => '1',
-  'CACAAACCACTTCTGC spliced' => '1',
+#  'CACAAACCACTTCTGC spliced' => '1',
   'CCGTGGACATAACCTG' => undef,
-  'CCGTGGACATAACCTG spliced' => undef,
+#  'CCGTGGACATAACCTG spliced' => undef,
   'GTCATTTAGTCGTTTG' => '1',
-  'GTCATTTAGTCGTTTG spliced' => '1',
+#  'GTCATTTAGTCGTTTG spliced' => '1',
   'GTCCTCATCTGCAGTA' => '1',
-  'GTCCTCATCTGCAGTA spliced' => '1',
+#  'GTCCTCATCTGCAGTA spliced' => '1',
   'Gene_ID' => 'ENSMUSG00000108159.1',
   'TAAGCGTGTGGGTATG' => undef,
-  'TAAGCGTGTGGGTATG spliced' => undef,
+#  'TAAGCGTGTGGGTATG spliced' => undef,
   'TACAGTGGTTATTCTC' => '1',
-  'TACAGTGGTTATTCTC spliced' => '1',
+#  'TACAGTGGTTATTCTC spliced' => '1',
   'TGCGTGGAGCTACCGC' => '1',
-  'TGCGTGGAGCTACCGC spliced' => '1'
+#  'TGCGTGGAGCTACCGC spliced' => '1'
 };
 my $t;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
@@ -103,22 +103,22 @@ is_deeply( $t, $exp1, "data line for ENSMUSG00000108159.1" ); #109020	111963
 
 my $exp2 = {
   'ATAGACCGTGGTGTAG' => undef,
-  'ATAGACCGTGGTGTAG spliced' => undef,
+#  'ATAGACCGTGGTGTAG spliced' => undef,
   'CACAAACCACTTCTGC' => undef,
-  'CACAAACCACTTCTGC spliced' => undef,
+#  'CACAAACCACTTCTGC spliced' => undef,
   'CCGTGGACATAACCTG' => '2',
-  'CCGTGGACATAACCTG spliced' => '2',
+#  'CCGTGGACATAACCTG spliced' => '2',
   'GTCATTTAGTCGTTTG' => undef,
-  'GTCATTTAGTCGTTTG spliced' => undef,
+#  'GTCATTTAGTCGTTTG spliced' => undef,
   'GTCCTCATCTGCAGTA' => undef,
-  'GTCCTCATCTGCAGTA spliced' => undef,
+#  'GTCCTCATCTGCAGTA spliced' => undef,
   'Gene_ID' => 'ENSMUSG00000106728.3',
   'TAAGCGTGTGGGTATG' => '1',
-  'TAAGCGTGTGGGTATG spliced' => '1',
+#  'TAAGCGTGTGGGTATG spliced' => '1',
   'TACAGTGGTTATTCTC' => undef,
-  'TACAGTGGTTATTCTC spliced' => undef,
+#  'TACAGTGGTTATTCTC spliced' => undef,
   'TGCGTGGAGCTACCGC' => undef,
-  'TGCGTGGAGCTACCGC spliced' => undef
+#  'TGCGTGGAGCTACCGC spliced' => undef
 };
 
 $t = undef;

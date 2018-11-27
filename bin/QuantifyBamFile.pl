@@ -163,7 +163,10 @@ for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 
 $options->{'quantify_on'} ||= 'exon';
 $options->{'report_on'}   ||= 'gene_id';
-$options->{'min_UMIs'}    ||= 100;
+unless ( defined $options->{'min_UMIs'} ){
+	$options->{'min_UMIs'} = 100; ## could be set to 0
+}
+
 
 ###
 
@@ -211,6 +214,8 @@ my $result = stefans_libs::result_table->new(
 		#	'table_path'           => $drop_chr # not use - might crap things up
 	}
 );
+
+$fm = root->filemap($outfile);
 
 my $spliced = stefans_libs::result_table->new(
 	{
@@ -483,10 +488,12 @@ sub filter {
 		print ".";
 	}
 	( $sample_name, $UMI ) = sample_and_umi_my(@bam_line);
+	if ( $options->{'min_UMIs'} > 0 ){
 	unless ( $OK->{$sample_name} ){
-		warn "sample $sample_name should not be analyzed\n" if ( $bugfix );
+		warn "sample $sample_name should not be analyzed (>$options->{'min_UMIs'} UMIs)\n" if ( $bugfix );
 		return;
 	}    ## new way to get rid of crap
+	}
 	Carp::confess(
 		"Sorry I lack the UMI information - have you used SplitToCells.pl?\n\t"
 		  . join( "\t", @bam_line ) )
@@ -526,7 +533,7 @@ sub filter {
 	my @matching_IDs =  &get_matching_ids( $gtf_obj, $bam_line[2], @{$read_areas[0]}[0], @{$read_areas[0]}[1], 1 ); ## 1 == update
 	my @unspliced_IDs;
 	@matching_IDs = @{$matching_IDs[0]};
-	@unspliced_IDs = @{$matching_IDs[1]};
+	@unspliced_IDs = @{$matching_IDs[1]} if ( ref($matching_IDs[1]) eq "ARRAY");
 	
 	if ( @matching_IDs == 0 ) { ## the first part of the match did not match an exon - kick it?
 	    if ( @unspliced_IDs > 0 ){
@@ -696,18 +703,26 @@ sub get_matching_ids {
 		$self->{'end'} = $self->{'next_start'} = 0;
 	}
 	$self->{'last_start'} = $start if ( $update );
-	return () if ( $self->{'skip'} eq $chr );
+	return ([],[]) if ( $self->{'skip'} eq $chr );
 	if ( $self->{'end'} < $start and $start < $self->{'next_start'} ) {
-		warn "get_matching_ids intergenic - return\n" if ($bugfix);
-		return ();
+		warn "get_matching_ids intergenic - return ($self->{'end'} < $start) & ($start < $self->{'next_start'})\n" if ($bugfix);
+		return ([],[]);
 	}
-	if ( $self->{'end'} <= $start ) {    # match to a new feature
+	#if ( $self->{'end'} <= $start ) {    # match to a new feature
+	if ( $start < $self->{'end'} ) {
+		warn
+"\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n"
+		  . join( "\n", @{ $self->{'last_IDS'} } ) . "\n"
+		  if ($bugfix);
+		@IDS = @{ $self->{'last_IDS'} };
+	}
+	elsif ( $start >= $self->{'next_start'}) {
 		warn
 "Do a new match : get_matching_ids end < start ($self->{'end'} < $start)\n"
 		  if ($bugfix);
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
-		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start, $end );
+		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start-50, $end );
 		if ( scalar(@IDS) == 1 and !defined $IDS[0] ) {
 			## useless chr!
 			$self->{'skip'} = $chr;
@@ -769,13 +784,6 @@ sub get_matching_ids {
 		}
 
 		@IDS = @OK;
-	}
-	elsif ( $start < $self->{'end'} ) {
-		warn
-"\tNo match needed ( $start < $self->{'end'} ) I can use the old match\n"
-		  . join( "\n", @{ $self->{'last_IDS'} } ) . "\n"
-		  if ($bugfix);
-		@IDS = @{ $self->{'last_IDS'} };
 	}
 	elsif ( $start < $self->{'next_start'} ) {
 		warn "\tNo match needed?!( $start < $self->{'next_start'} )\n"

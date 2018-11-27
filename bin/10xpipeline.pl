@@ -30,7 +30,7 @@
        -I1       :All I1 files for the sample
        -gtf      :the gtf file containing the genes to quantify on
        -coverage :the chromosmome length file
-       -genome   :the hisat2 index to use
+       -genome   :the STAR index to use
        -outpath  :the path all outfiles should be written to
        -n        :the number of cores to use (default 3)
 
@@ -43,7 +43,7 @@
                   or if you are working on a workstation without SLURM environment.
        
        -options  :all options have to be given as key<space>value combinations
-                  like -options A lsens2017-3-2 t 02:00:00 p dell
+                  like -options A lsens2018-3-3 t 02:00:00 p dell
            A     :the slurm sbatch A option
            t     :the slurm time option
            p     :the slurm partition option
@@ -54,7 +54,7 @@
    
 =head1 DESCRIPTION
 
-  Run the whole perl pipeline based on HISAT2 sidestepping most of Illuminas own programm.
+  Run the whole perl pipeline based on STAR sidestepping most of Illuminas own programm.
   
   The fastq files need to be obtained from the 10x data using the mkfastq command.
   All three I1 R1 and R2 are used here.
@@ -69,6 +69,8 @@ use Pod::Usage;
 use stefans_libs::SLURM;
 use Parallel::ForkManager;
 use stefans_libs::file_readers::gtf_file;
+use Cwd;
+use File::Spec;
 
 use DateTime;
 
@@ -131,15 +133,17 @@ $task_description .= ' -local' if ($local);
 
 if ( -d $R1[0] ) {
 	## OK that is the best way to do it :-D
-	my $fm = root->filemap( $R1[0] . "/test.txtx" );
-	@R2 = undef;
-	@I1 = undef;
-	my $path = $fm->{'path'};    ## abs path please
-	open( IN, "find $path -name '*$sname*.gz' |" )
-	  or die "I could not start the find subprocess\n$!\n";
-	@R1 = map { chomp; split( /\s+/, $_ ) } <IN>;
-
-	close(IN);
+	my $func = sub {
+		my $R1 = shift;
+		my $fm = root->filemap( $R1 . "/test.txtx" );
+		my $path = $fm->{'path'};    ## abs path please
+		open( IN, "find $path -name '*$sname*.gz' |" )
+	  	or die "I could not start the find subprocess\n$!\n";
+		my @R1 = map { chomp; split( /\s+/, $_ ) } <IN>;
+		close ( IN );
+		return @R1;
+	};
+	@R1 = (map { &$func($_) } @R1 );
 }
 if ( -f $R1[0] and !defined $R2[0] ) {    ## I just assume I1 is also empty..
 	my @tmp = @R1;
@@ -208,6 +212,8 @@ unless ( defined $genome ) {
 }
 unless ( defined $outpath ) {
 	$error .= "the cmd line switch -outpath is undefined!\n";
+}elsif ( $outpath =~ m/^\w/) {
+	$outpath = File::Spec->catfile( getcwd(), $outpath )
 }
 unless ( defined $options[0] ) {
 	$warn .= "the cmd line switch -options is undefined!\n";
@@ -317,45 +323,45 @@ else {
 $start_this = &check_time_since( $start_this,
 	'merge R1, R2 and I1 reads + polyA and low quality filter', $SLURM_ids );
 
-#hisat2_run_aurora.pl
+#STAR_run_aurora.pl
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
 
-my $hisat2 =
-    "hisat2_run_aurora.pl -files '"
+my $STAR =
+    "star_run_aurora.pl -files '"
   . join( "' '", @$sumFastqs )
-  . "' -outpath $outpath/HISAT2_mapped/"
-  . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
+  . "' -outpath $outpath/STAR_mapped/"
+#  . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
   . " -options n 5 partitition $options->{'p'} A "
   . $options->{'A'};
 my $used = { map { $_ => 1 } qw( n A p N ) };
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
-	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );
+	$STAR .= " '$key' '$value'" unless ( $used->{$key} );
 }
-$hisat2 .=
-" -genome $genome -coverage $coverage -bigwigTracks $outpath/hisat2_$sname.html";
-$hisat2 .= " -fast_tmp '$fast_tmp' -justMapping";
-$hisat2 .= " -debug" if ($debug);
-$hisat2 .= " -local" if ($local);
+$STAR .=
+" -genome $genome -coverage $coverage -bigwigTracks $outpath/star_$sname.html";
+$STAR .= " -fast_tmp '$fast_tmp' -justMapping";
+$STAR .= " -debug" if ($debug);
+$STAR .= " -local" if ($local);
 
-print "we start the hist2 mapping process:\n" . $hisat2 . "\n";
+print "we start the star mapping process:\n" . $STAR . "\n";
 
 #die "First make sure we got all files!\n";
 
-map { unlink($_) } get_files_from_path( $outpath, "hisat2_run.local\\d*.out", "hisat2_run.local\\d*.err" );
+map { unlink($_) } get_files_from_path( $outpath, "star_run.local\\d*.out", "star_run.local\\d*.err" );
 
-$SLURM_local->run( $hisat2, "$outpath/hisat2_run" );
-## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/hisat2_run<PID>.err and $outpath/hisat2_run<PID>.out file
+$SLURM_local->run( $STAR, "$outpath/star_run" );
+## the SLURM_local should run this script on the frontend; remove all old log files and create a $outpath/STAR_run<PID>.err and $outpath/STAR_run<PID>.out file
 
 ## Identify the run ids we need to wait for:
 
-my @tmp = get_files_from_path( $outpath, "hisat2_run.local\\d*.out" );
+my @tmp = get_files_from_path( $outpath, "star_run.local\\d*.out" );
 #Carp::confess("I did not get a usable hisat out file? $tmp[0]\n");
 unless ( -f $tmp[0] ) {
-	Carp::confess("I did not get a usable hisat out file!\n");
+	Carp::confess("I did not get a usable star out file!\n");
 }
 open( RUN, $tmp[0] )
-  or die "I could not open the hisat2_runaurora stdout file '$tmp[0]'\n$!\n";
+  or die "I could not open the star_run_aurora stdout file '$tmp[0]'\n$!\n";
 
 $SLURM_ids = [];
 foreach (<RUN>) {
@@ -366,30 +372,30 @@ foreach (<RUN>) {
 close(RUN);
 
 if ($debug) {
-	mkdir("$outpath/HISAT2_mapped/") unless ( -d "$outpath/HISAT2_mapped/" );
+	mkdir("$outpath/STAR_mapped/") unless ( -d "$outpath/STAR_mapped/" );
 	## and we would expect one outfile for all fastq files - so lets add some fake ones:
 	my $fm;
 	foreach my $f (@$sumFastqs) {
 		$fm = root->filemap($f);
 		my $nfile =
-		    "$outpath/HISAT2_mapped/FAKE_DEBUG_"
+		    "$outpath/STAR_mapped/FAKE_DEBUG_"
 		  . $fm->{'filename_base'}
-		  . ".sorted.bam";
+		  . ".sortedByCoord.out.bam";
 		unless ( -f $nfile ) {
 			system("touch $nfile");
 		}
 	}
 }
 
-print "We got the HISAT2 slurm IDs: " . join( " ", @$SLURM_ids ) . "\n";
+print "We got the STAR slurm IDs: " . join( " ", @$SLURM_ids ) . "\n";
 
-$start_this = &check_time_since( $start_this, 'HISAT2 mapping', $SLURM_ids );
+$start_this = &check_time_since( $start_this, 'STAR mapping', $SLURM_ids );
 
-## check the hisat2 results
-my @OK = get_files_from_path( "$outpath/HISAT2_mapped/", ".bam\$" );
+## check the STAR results
+my @OK = get_files_from_path( "$outpath/STAR_mapped/", ".bam\$" );
 
 unless ( scalar(@OK) == scalar(@$sumFastqs) ) {
-	Carp::confess( "The HISAT2 scripts did not produce the expected output\n"
+	Carp::confess( "The STAR scripts did not produce the expected output\n"
 		  . "I only got "
 		  . scalar(@OK)
 		  . " outfiles and expected "
@@ -397,7 +403,7 @@ unless ( scalar(@OK) == scalar(@$sumFastqs) ) {
 		  . " mapped bam files\n" );
 }
 else {
-	print "HISAT2 did produce the required " . scalar(@OK) . " outfiles\n";
+	print "STAR did produce the required " . scalar(@OK) . " outfiles\n";
 }
 
 ## now reshuffle the bam files
@@ -408,7 +414,7 @@ $SLURM->{'options'}->add( 'n', $n );
 
 my $cmd = 'ReshuffleBamFiles.pl';
 
-$cmd .= " -bams $outpath/HISAT2_mapped/*.sorted.bam";
+$cmd .= " -bams $outpath/STAR_mapped/*.sortedByCoord.out.bam";
 $cmd .= " -outpath $outpath/reshuffled/";
 $cmd .= " -coverage $coverage";
 $cmd .= " -gtf $gtf";
@@ -431,7 +437,7 @@ if ( scalar(@chrBams) == 0 ) {
 		$SLURM->run(
 			$cmd,
 			"$outpath/reshuffled/script_run",
-			"$outpath/reshuffled/chr1_" . $sname . ".sorted.bam"
+			"$outpath/reshuffled/chr1_" . $sname . ".sortedByCoord.out.bam"
 		)
 	  )
 	  ; ## the other one will not run due to the 'debug' setting, but I created fake data and want to test this here
@@ -440,7 +446,7 @@ if ( scalar(@chrBams) == 0 ) {
 		$SLURM_local->run(
 			$cmd,
 			"$outpath/reshuffled/$sname" . "_reshuffle_script_run",
-			"$outpath/reshuffled/chr1_" . $sname . ".sorted.bam"
+			"$outpath/reshuffled/chr1_" . $sname . ".sortedByCoord.out.bam"
 		);
 
 	}
@@ -459,7 +465,7 @@ $start_this =
 #QuantifyBamFile.pl -infile ./HVJ5GBGX2/outs/fastq_path/Tobias1/s1/CLP_S1_L001_R2_001.fastq.gz -outfile perl_requant/CLP_S1_L001_R2 -gtf_file ~/lunarc/genomes/mouse/mm10/gencode.vM14.chr_patch_hapl_scaff.annotation.gtf
 # This takes so much memory I need to run it on the frontend ;-(
 
-my @chrBams = &get_files_from_path( "$outpath/reshuffled/", ".*bam\$" );
+@chrBams = &get_files_from_path( "$outpath/reshuffled/", ".*bam\$" );
 
 my $paths;
 print "Starting to quantify the bam files\n";
@@ -538,7 +544,7 @@ sub check_time_since {
 	  . $end->time()
 	  . " - $msg - processing time: "
 	  . join( ":",
-		$end->subtract_datetime($start)->in_units( 'days', 'hours', 'seconds' )
+		$end->subtract_datetime($start_last->clone())->in_units( 'days', 'hours', 'seconds' )
 	  ) . "\n";
 	print $str;
 	return $end;
