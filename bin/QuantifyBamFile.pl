@@ -722,6 +722,7 @@ sub get_matching_ids {
 		  if ($bugfix);
 		&reinit_UMI();
 		$self->{'last_IDS'} = [];
+		warn "lib change using $start -50!\n";
 		@IDS = $gtf->efficient_match_chr_position_plus_one( $chr, $start-50, $end );
 		if ( scalar(@IDS) == 1 and !defined $IDS[0] ) {
 			## useless chr!
