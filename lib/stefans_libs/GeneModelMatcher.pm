@@ -1,4 +1,4 @@
-package stefans_libs::gtf_file::GeneModelMatcher;
+package stefans_libs::GeneModelMatcher;
 
 #use FindBin;
 #use lib "$FindBin::Bin/../lib/";
@@ -6,7 +6,9 @@ package stefans_libs::gtf_file::GeneModelMatcher;
 use strict;
 use warnings;
 
-use stefans_libs::gtf_file::geneModel;
+use stefans_libs::GeneModelMatcher::geneModel;
+use stefans_libs::GeneModelMatcher::matchSave;
+use stefans_libs::file_readers::gtf_file; ## to use the efficient match without re-coding
 
 =head1 LICENCE
 
@@ -62,16 +64,18 @@ sub new{
 
 	$self = {
 		'__gname2id__' => {},
+		'gtf_file' => undef,
 		'data' => [],
 		'id' => 'gene_id',
 		'collect_over' => 'gene',
 		'collect' => 'exon',
+		'match_save' => stefans_libs::GeneModelMatcher::matchSave->new(),
   	};
   	foreach ( keys %{$hash} ) {
   		$self-> {$_} = $hash->{$_};
   	}
 
-  	bless $self, $class  if ( $class eq "stefans_libs::gtf_file::GeneModelMatcher" );
+  	bless $self, $class  if ( $class eq "stefans_libs::GeneModelMatcher" );
 	
 	$self->check();
 	if ( defined $self->{'filename'} ) {
@@ -80,6 +84,11 @@ sub new{
 	
   	return $self;
 
+}
+
+sub Info {
+	my ( $self ) = @_;
+	return map{ $_->Summary() } @{$self->{'data'}};
 }
 
 sub check{
@@ -93,15 +102,36 @@ sub check{
 }
 
 sub read_file {
-	my ( $self, $filename ) = @_;
-	$self->{'filename'} = $filename if ( -f $filename); ## ope self->filename is set otherwiese ;-)
-	my ($f, $collected);
+	my ( $self, $filename, $chr ) = @_;
+	$self->{'filename'} = $filename if ( -f $filename); ## open self->filename is set otherwiese ;-)
+	
+	my ($f, $collected, $start, $end);
+		
+	if ( defined $chr ) {
+		if ( $chr =~ m/^([\w\\._]+)\:(\d+)-(\d+)/ ) {
+			$chr = $1; $start = $2; $end = $3;
+		}
+	}
 	$collected = 0;
+	$self->{'gtf_file'} = stefans_libs::file_readers::gtf_file->new();
+	@{$self->{'gtf_file'}->{'header'}}[8] = $self->{'id'};
+	delete($self->{'gtf_file'}->{'header_position'}->{'annotation'});
+	$self->{'gtf_file'}->{'header_position'}->{ $self->{'id'} } = 8;
+	
 	open ( $f, "<$self->{'filename'}" ) or Carp::confess ("Sorry I could not open the file '$self->{'filename'}'\n$!\n");
+	my $line = 0;
 	while( <$f> ) {
+		$line ++;
 		next if ( $_ =~ m/^#/ );
 		chomp($_);
 		my @tmp = split(/\t/, $_);
+		if ( defined $chr ) {
+			next unless ( $tmp[0] eq $chr );
+			if ( defined $start ) {
+				next unless ( $start < $tmp[4] and $end > $tmp[3] );
+				#warn "Line $line made it through the $chr:$start-$end selection:\n$_\n";
+			}
+		}
 		if ( @tmp != 9 ) {
 			Carp::confess("not a gtf or gff3 line: $_\n" );
 		}
@@ -113,8 +143,11 @@ sub read_file {
 				Carp::confess ( "the same gene twice here: $_\n");
 			}
 			$self->{'__gname2id__'}->{$anno->{$self->{'id'}}} = scalar(@{$self->{'data'}} );
-			push (@{$self->{'data'}}, stefans_libs::gtf_file::geneModel->new( @tmp, $anno ));
+			push (@{$self->{'data'}}, stefans_libs::GeneModelMatcher::geneModel->new( @tmp, $anno ));
+			push( @{$self->{'gtf_file'}->{'data'}}, [@tmp, $anno->{$self->{'id'}} ] );
 		}elsif( $tmp[2] eq $self->{'collect'} ) {
+			Carp::confess( "I have no '$self->{'collect_over'}' entry for this '$self->{'collect'}' feature on line $line\n". join("\t", @tmp)."\n$_\n")
+				unless ( defined  $self->{'__gname2id__'}->{$anno->{$self->{'id'}}} );
 			@{$self->{'data'}}[ $self->{'__gname2id__'}->{$anno->{$self->{'id'}}} ]->Add( @tmp, $anno );
 			$collected++;
 		}
@@ -124,6 +157,49 @@ sub read_file {
 	return $self;
 }
 
+=head3 genes_at_position_plus_one( $chr, $start, $end, $add )
+
+uses gtf_file::efficient_match_chr_position_plus_one to select all matching features + the next matching feature.
+Returns an array of stefans_libs::GeneModelMatcher::geneModel objects.
+
+=cut
+
+sub genes_at_position_plus_one {
+	my ( $self, $chr, $start, $end, $add ) = @_;
+	$add ||= 0;
+	my @ids = $self->{'gtf_file'}->efficient_match_chr_position_plus_one( $chr, $start, $end, $add );
+	return @{$self->{'data'}}[@ids];
+}
+
+
+=head3 match_cigar ( $chr, $start, $cigar)
+
+Matches the cigar information of a sam/bam file to the gene models - please use sorted bam/sam files as 
+the order speeds up this match enormousely!
+
+returns the id of the matching genes id if any and an 'exon' match, 'spliced' match or 'primary' transcript match as hash.
+
+=cut	
+
+sub match_cigar{
+	my ( $self, $chr, $start, $cigar) = @_;
+	## the cigar looks like 3S8M21445N87M
+	if ( $cigar =~ s/^(\d)+S// ) {
+		#warn "there was a $1 bp mismatch in the start of the read - adjust $start";
+		$start += $1;
+	}
+	my $end = $start;
+	map { $end += $_ } split( /[A-Z]/, $cigar);
+
+	unless ( $self->{'match_save'}->match( $chr, $start, $end) ){
+		my @matches = $self->genes_at_position_plus_one( $chr, $start, $end  );
+		#warn "rematch to genes $chr, $start, $end did produce ".scalar(@matches)." matching entries";
+		$self->{'match_save'}->Update( $self->{'id'}, $chr, $start, $end, @matches );
+	}
+	#warn "matching the cigar $chr, $start, $cigar\n";
+	return $self->{'match_save'}->match_cigar( $chr, $start, $cigar );
+}
+
 
 sub split_annotation {
 	my ( $self, $anno ) = @_;
@@ -131,8 +207,9 @@ sub split_annotation {
 	if ( $self->{'filename'} =~ m/gtf$/ ){
 		#gene_id "ENSMUSG00000102693.1"; gene_type "TEC"; gene_name "4933401J01Rik"; level 2; havana_gene "OTTMUSG00000049935.1";
 		$anno =~ s/;$//; 
+		$anno =~ s/"//g; 
 		$ret = { map{ 
-			if ( $_ =~ m/([\w_]+) "(.+)"/) { 
+			if ( $_ =~ m/([\w_]+) (.+)/) { 
 				$1 => $2 
 			} else { 
 				Carp::confess( "wrong gft annotation format on line". scalar(@{$self->{'data'}}).": $_\n" )

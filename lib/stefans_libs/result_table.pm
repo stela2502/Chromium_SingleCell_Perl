@@ -155,6 +155,9 @@ sub AddDataset {
 		$key->{ $hash->{'Gene_ID'} } = scalar( @{ $self->{'data'} } - 1 );
 	}
 	if ($add) {
+		#warn "I add for gene $hash->{'Gene_ID'} and sample $hash->{'Sample_ID'} $hash->{'value'} to my value ".
+		#	@{ @{ $self->{'data'} }[ $key->{ $hash->{'Gene_ID'} } ] }[ $self->Add_2_Header( $hash->{'Sample_ID'} ) ]."\n";
+			
 		@{ @{ $self->{'data'} }[ $key->{ $hash->{'Gene_ID'} } ] }
 		  [ $self->Add_2_Header( $hash->{'Sample_ID'} ) ] += $hash->{'value'};
 	}
@@ -494,13 +497,14 @@ sub export2file {
 	else {
 		@order = (1);
 	}
+	if ( -f $ofile ) {
+		open( OUT, ">>$ofile" ) or die "could not add to file '$ofile'\n$!";
+	}
+	else {
+		open( OUT, ">$ofile" ) or die "could not create file '$ofile'\n$!";
+	}
 	if ( $obj->Lines() > 0 ) {
-		if ( -f $ofile ) {
-			open( OUT, ">>$ofile" ) or die "could not add to file '$ofile'\n$!";
-		}
-		else {
-			open( OUT, ">$ofile" ) or die "could not create file '$ofile'\n$!";
-		}
+		
 		while ( my $line = shift( @{ $obj->{'data'} } ) ) {
 #			warn "export to $ofile in order"
 #			  . join( " ", @order )
@@ -508,8 +512,8 @@ sub export2file {
 #			  . join( " ", @$line[@order] ) . "\n";
 			print OUT join( " ", @$line[@order] ) . "\n";
 		}
-		close(OUT);
 	}
+	close(OUT);
 	return $self;
 }
 
@@ -526,7 +530,7 @@ sub print2table {
 	}else {
 		$outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
 	}
-	print "result_table is exporting to $outpath\n";
+	print "result_table is exporting to '$outpath' with ".scalar(@{$self->{'header'}})." cells and ".scalar(@{$self->{'data'}})." genes\n";
 	mkdir($outpath) unless ( -d $outpath );
 	my $ofile;
 

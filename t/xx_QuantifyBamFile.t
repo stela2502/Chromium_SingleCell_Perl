@@ -74,52 +74,49 @@ $result_table ->line_separator(';');
 #for ( my $i = 0; $i < 2; $i++ ){
 #	my %t;
 #	@t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[$i]};
-#	print "$i : \$exp = ".root->print_perl_var_def( \%t ).";\n";
-#	
+#	print "$i : \$exp = ".root->print_perl_var_def( \%t ).";\n";	
 #}
 my $exp1 = {
+  'ACGGAGAAGAGTGACC' => undef,
   'ATAGACCGTGGTGTAG' => '1',
-#  'ATAGACCGTGGTGTAG spliced' => '1',
+  'ATTACTCCATCGGAAG' => undef,
   'CACAAACCACTTCTGC' => '1',
-#  'CACAAACCACTTCTGC spliced' => '1',
+  'CACCACTCTTGACGTT' => undef,
   'CCGTGGACATAACCTG' => undef,
-#  'CCGTGGACATAACCTG spliced' => undef,
+  'CGTTCTGAGGTGCACA' => undef,
   'GTCATTTAGTCGTTTG' => '1',
-#  'GTCATTTAGTCGTTTG spliced' => '1',
   'GTCCTCATCTGCAGTA' => '1',
-#  'GTCCTCATCTGCAGTA spliced' => '1',
   'Gene_ID' => 'ENSMUSG00000108159.1',
   'TAAGCGTGTGGGTATG' => undef,
-#  'TAAGCGTGTGGGTATG spliced' => undef,
   'TACAGTGGTTATTCTC' => '1',
-#  'TACAGTGGTTATTCTC spliced' => '1',
-  'TGCGTGGAGCTACCGC' => '1',
-#  'TGCGTGGAGCTACCGC spliced' => '1'
+  'TCGCGAGGTGAACCTT' => undef,
+  'TGATTTCCAAGCCATT' => undef,
+  'TGCGTGGAGCTACCGC' => '1'
 };
+
 my $t;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
 is_deeply( $t, $exp1, "data line for ENSMUSG00000108159.1" ); #109020	111963
 
 my $exp2 = {
-  'ATAGACCGTGGTGTAG' => undef,
-#  'ATAGACCGTGGTGTAG spliced' => undef,
-  'CACAAACCACTTCTGC' => undef,
-#  'CACAAACCACTTCTGC spliced' => undef,
-  'CCGTGGACATAACCTG' => '2',
-#  'CCGTGGACATAACCTG spliced' => '2',
-  'GTCATTTAGTCGTTTG' => undef,
-#  'GTCATTTAGTCGTTTG spliced' => undef,
-  'GTCCTCATCTGCAGTA' => undef,
-#  'GTCCTCATCTGCAGTA spliced' => undef,
-  'Gene_ID' => 'ENSMUSG00000106728.3',
-  'TAAGCGTGTGGGTATG' => '1',
-#  'TAAGCGTGTGGGTATG spliced' => '1',
-  'TACAGTGGTTATTCTC' => undef,
-#  'TACAGTGGTTATTCTC spliced' => undef,
-  'TGCGTGGAGCTACCGC' => undef,
-#  'TGCGTGGAGCTACCGC spliced' => undef
+  'ACGGAGAAGAGTGACC' => undef,
+  'ATAGACCGTGGTGTAG' => '1',
+  'ATTACTCCATCGGAAG' => undef,
+  'CACAAACCACTTCTGC' => '1',
+  'CACCACTCTTGACGTT' => undef,
+  'CCGTGGACATAACCTG' => undef,
+  'CGTTCTGAGGTGCACA' => undef,
+  'GTCATTTAGTCGTTTG' => '1',
+  'GTCCTCATCTGCAGTA' => '1',
+  'Gene_ID' => 'ENSMUSG00000108159.1_spliced',
+  'TAAGCGTGTGGGTATG' => undef,
+  'TACAGTGGTTATTCTC' => '1',
+  'TCGCGAGGTGAACCTT' => undef,
+  'TGATTTCCAAGCCATT' => undef,
+  'TGCGTGGAGCTACCGC' => '1'
 };
+
 
 $t = undef;
 
@@ -129,16 +126,14 @@ is_deeply( $t, $exp2, "data line for ENSMUSG00000106728.3" ); # 389199	414164
 
 
 #print "\$exp = ".root->print_perl_var_def( $result_table->createIndex('Gene_ID') ).";\n";
-my $exp3 = {
-  'ENSMUSG00000106728.3' => [ '1' ],
-  'ENSMUSG00000108159.1' => [ '0' ]
-};
 
-is_deeply ( $result_table->createIndex('Gene_ID'), $exp3, "Gene ENSMUSG00000107912.1 not reported" );
+is_deeply ( ! defined($result_table->createIndex('Gene_ID')->{'ENSMUSG00000107912.1'}), 1, "Gene ENSMUSG00000107912.1 not reported" );
+
 
 #print $result_table->AsString();
 
-## restart #1
+warn ( "restart #1");
+
 system("rm -Rf $outpath/*");
 $outfile = "$outpath/chrJH792828_1_and_something_else.sqlite";
 $cmd =
@@ -156,11 +151,12 @@ $cmd =
 . " -options " . join(' ', @options )
 . " -fastqPath $fastqPath"
 . " -sampleID TestSample"
-. " -drop_chr chrJH792828.1"
+. " -drop_chr JH792828.1"
 #. " -debug"
 ;
 
 $start = time;
+warn ( $cmd );
 system( $cmd );
  $duration = time - $start;
 print "Execution time: $duration s\n";
@@ -194,7 +190,7 @@ $t = undef;
 is_deeply( $t, $exp2, "drop_chr data line for ENSMUSG00000106728.3" ); # 389199	414164
 
 
-## restart
+warn ( "restart #2");
 system("rm -Rf $outpath/*");
 $outfile = "$outpath/chrJH792828_1:108000-114000";
 $cmd =
@@ -212,7 +208,7 @@ $cmd =
 . " -options " . join(' ', @options )
 . " -fastqPath $fastqPath"
 . " -sampleID TestSample"
-. " -drop_chr chrJH792828.1:108000-114000" ## only ENSMUSG00000108159.1
+. " -drop_chr JH792828.1:108000-114000" ## only ENSMUSG00000108159.1
 #. " -debug"
 ;
 system( $cmd );
@@ -232,9 +228,11 @@ $t = undef;
 #print "\$exp = ".root->print_perl_var_def($t ).";\n";
 is_deeply( $t, $exp, "data line for ENSMUSG00000108159.1 only" ); #109020	111963
 
-ok ($result_table->Lines() == 1, "Only one gene quantified." );
 
-## restart
+
+ok ($result_table->Lines() == 2, "Only one gene quantified. (". $result_table->Lines(). ")");
+
+warn ( "restart #3");
 system("rm -Rf $outpath/*");
 $outfile = "$outpath/chrJH792828_1:389100-415000";
 
@@ -253,24 +251,32 @@ $cmd =
 . " -options " . join(' ', @options )
 . " -fastqPath $fastqPath"
 . " -sampleID TestSample"
-. " -drop_chr chrJH792828.1:389100-415000" ## only ENSMUSG00000106728.3 389199	414164
+. " -drop_chr JH792828.1:389100-415000" ## only ENSMUSG00000106728.3 389199	414164
 #. " -debug"
 ;
 system( $cmd );
+warn $cmd."\n";
 $result_table = stefans_libs::result_table->new();
 $result_table -> import_tables ( $outfile );
 
 $t = undef;
 @$t{@{$result_table->{header}}} = @{@{$result_table->{'data'}}[0]};
 
-$exp = undef;
-foreach ( keys %$exp2 ) {
-	$exp->{$_} = $exp2->{$_} if ( defined $exp2->{$_} );
-}
+
+#print "\$exp = ".root->print_perl_var_def($t ).";\n";
+
+$exp = {
+  'ACGGAGAAGAGTGACC' => undef,
+  'ATTACTCCATCGGAAG' => undef,
+  'CCGTGGACATAACCTG' => '2',
+  'Gene_ID' => 'ENSMUSG00000106728.3',
+  'TAAGCGTGTGGGTATG' => '1',
+  'TCGCGAGGTGAACCTT' => undef
+};
 
 is_deeply( $t, $exp, "data line for ENSMUSG00000108159.1 only" ); #109020	111963
 
-ok ($result_table->Lines() == 1, "Only one gene quantified." );
+ok ($result_table->Lines() == 3, "Only one gene quantified." );
 
 
 

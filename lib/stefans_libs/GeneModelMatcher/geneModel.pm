@@ -1,4 +1,4 @@
-package stefans_libs::gtf_file::geneModel;
+package stefans_libs::GeneModelMatcher::geneModel;
 
 #use FindBin;
 #use lib "$FindBin::Bin/../lib/";
@@ -73,14 +73,53 @@ sub new{
 		'orientation' => $data[6],
 		'info' => $hash,
 		'last' => undef,
+		'positions' => [],
 		'data' => [],
   	};
 
-  	bless $self, $class  if ( $class eq "stefans_libs::gtf_file::geneModel" );
+  	bless $self, $class  if ( $class eq "stefans_libs::GeneModelMatcher::geneModel" );
 
   	return $self;
 
 }
+
+sub Summary {
+	my ( $self ) = @_;
+	return "$self->{'chr'}:$self->{'start'}-$self->{'end'} length ". ($self->{'end'} - $self->{'start'});
+} 
+
+
+=head3 AsHash ()
+
+returns the gene information as hash
+
+=cut
+
+sub AsHash {
+	my $self = shift;
+	my $ret = {map { $_ =>  $self->{$_} } qw( chr start end orientation ) };
+	map { $ret->{$_} = $self->{'info'}->{$_} } keys %{$self->{'info'}};
+	
+	return$ret;	
+}
+
+=head3 NextChange ( $pos )
+
+returns the next position this model changes state.
+
+=cut
+	
+sub NextChange {
+	my ($self, $pos ) = @_;
+	foreach ( @{$self->{'positions'}} ) {
+		if ( $_ >= $pos ){
+			#warn " start = $pos: of all possible options I return $_ (".join(", ", @{$self->{'positions'}} ).")\n";
+			return $_ 
+		}
+	}
+	return -1;
+}
+
 
 sub Add{
 	my ( $self, @data ) = @_;
@@ -107,7 +146,9 @@ sub match {
 	my ( $self, $start, $end ) = @_;
 	## lets do the most likely first: only match to the last one;
 	unless ( defined $self->{'last'} ){
-		@{$self->{'data'}} = [ sort { $a->{'start'} <=> $b->{'start'} } @{$self->{'data'}} ];
+		$self->{'data'} = [ sort { $a->{'start'} <=> $b->{'start'} } @{$self->{'data'}} ];
+		$self->{'positions'} = [ map{ $_->{'start'}, $_->{'end'} } @{$self->{'data'}} ];
+		
 		if ( $self->{'orientation'} eq '+' ) {
 			my $id = pop(@{$self->{'data'}});
 			$self->{'last'} = this::entry->new( $id->{'start'}, $id->{'end'} + 50 );
@@ -123,6 +164,11 @@ sub match {
 		return 1 if (@{$self->{'data'}}[$i]-> exact_match( $start, $end ) )	
 	}
 	return 0;
+}
+
+sub total_match{
+	my ( $self, $start, $end ) = @_;
+	return ( $self->{'start'} <= $start and $self->{'end'} >= $end )
 }
 
 
@@ -174,9 +220,12 @@ sub match{
 
 sub exact_match{
 	my ( $self, $start, $end) = @_;
+	#warn "exact_match: check $start >= $self->{'start'} (".($start - $self->{'start'})." my diff) and $end <= $self->{'end'} (".($end - $self->{'end'})." my diff)\n";
 	if ( $start >= $self->{'start'} and $end <= $self->{'end'} ) {
+	#	warn "OK";
 		return 1;
 	}
+	#warn "Not OK";
 	return 0;
 }
 
