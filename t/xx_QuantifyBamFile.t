@@ -45,7 +45,6 @@ my $cmd =
     . "-I $plugin_path/../../stefans_libs-BAMfile/lib/ "
     . "-I ../../Stefans_Libs_Essentials/Stefans_Libs_Essentials/lib "
     . "-I ../../SLURM_bioinformatics_scripts/lib/ "
-    . "-I ../../SLURM_bioinformatics_scripts/lib/ "
     . "-I ../../stefans_libs-GenomeDB/lib "
     ."$exec "
 . " -gtf_file " . $gtf_file 
@@ -142,7 +141,6 @@ $cmd =
     . "-I $plugin_path/../../stefans_libs-BAMfile/lib/ "
     . "-I ../../Stefans_Libs_Essentials/Stefans_Libs_Essentials/lib "
     . "-I ../../SLURM_bioinformatics_scripts/lib/ "
-    . "-I ../../SLURM_bioinformatics_scripts/lib/ "
     . "-I ../../stefans_libs-GenomeDB/lib "
     ."$exec "
 . " -gtf_file " . $gtf_file 
@@ -198,7 +196,6 @@ $cmd =
     . "-I $plugin_path/../lib "
     . "-I $plugin_path/../../stefans_libs-BAMfile/lib/ "
     . "-I ../../Stefans_Libs_Essentials/Stefans_Libs_Essentials/lib "
-    . "-I ../../SLURM_bioinformatics_scripts/lib/ "
     . "-I ../../SLURM_bioinformatics_scripts/lib/ "
     . "-I ../../stefans_libs-GenomeDB/lib "
     ."$exec "

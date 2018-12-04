@@ -592,9 +592,7 @@ sub QuantifyBamFile_CMD {
 
 	$cmd .= " -debug" if ($debug);
 
-	$cmd .= "\nmv $opath $outpath/$chr_slice" . "_$sname";
-	$cmd .= "\nmv $opath/$chr_slice*.log $outpath/$chr_slice"
-	  . "_$sname/";    #copy the log file, too.
+	$cmd .= "\nmv $opath $outpath/";
 
 	return ( $cmd, "$outpath/$chr_slice" . "_$sname/" );
 }

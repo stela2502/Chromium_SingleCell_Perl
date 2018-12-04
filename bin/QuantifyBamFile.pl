@@ -416,28 +416,6 @@ sub sample_and_umi_cellranger {
 	return ( $sample_name, $UMI );
 }
 
-#sub result_areas {
-#        my ( $start, $cigar ) = @_;
-#        if ( $cigar =~m/^(\d+)S/ ) {
-#                $start += $1;
-#                $cigar =~s/^\d+S//;
-#        }
-#        my @r;
-#        $cigar =~ s/([SNM])(\d)/$1-$2/g;
-#        foreach ( split("-", $cigar) ){
-#                if ( $_ =~ m/(\d+)M/ ) {
-#                        push ( @r, [$start, ($start + $1)]);
-#                        $start += $1 -1;
-#                }elsif( $_ =~ m/(\d+)[NS]/ ) {
-#                        $start += $1 -1;
-#                }else {
-#                        die "I do not know what do do with that cigar part: $_\n";
-#                }
-#        }
-#        return @r;
-#}
-
-
 sub filter {
 	shift;
 	my @bam_line = split( "\t", shift );
