@@ -458,7 +458,8 @@ sub filter {
 	  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n"
 	  if ($bugfix);
 	## start with the real matching
-	
+	warn "Not using FLAG==16 here!}\n";
+	#TODO: use @bam_line[1] == 16 AND GET THE RIGHT SEQUENCE BACK! giving an edge above cellranger!
 	&add_to_summary( $sample_name, $GeneModelMatcher->match_cigar( @bam_line[2,3,5] ) ) ; ##chr start cigar 
 
 }

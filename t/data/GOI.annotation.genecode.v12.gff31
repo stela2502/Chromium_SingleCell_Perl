@@ -1,4 +1,4 @@
-chr19   HAVANA  gene    5795690 5802672 .       -       .       ID=ENSMUSG00000092341.2;gene_id=ENSMUSG00000092341.2;gene_type=lincRNA;gene_name=Malat1;level=2;tag=ncRNA_host;havana_gene=OTTMUSG00000037798.2
+chr19	HAVANA	gene	5795690	5802672	.	-	.	ID=ENSMUSG00000092341.2;gene_id=ENSMUSG00000092341.2;gene_type=lincRNA;gene_name=Malat1;level=2;tag=ncRNA_host;havana_gene=OTTMUSG00000037798.2
 chr3	HAVANA	gene	90668978	90670035	.	+	.	ID=ENSMUSG00000056054.9;gene_id=ENSMUSG00000056054.9;gene_type=protein_coding;gene_name=S100a8;level=2;havana_gene=OTTMUSG00000052758.1
 chr3	HAVANA	gene	90692632	90695721	.	-	.	ID=ENSMUSG00000056071.12;gene_id=ENSMUSG00000056071.12;gene_type=protein_coding;gene_name=S100a9;level=2;havana_gene=OTTMUSG00000026669.1
 chr3	HAVANA	gene	90726906	90741517	.	+	.	ID=ENSMUSG00000042250.13;gene_id=ENSMUSG00000042250.13;gene_type=protein_coding;gene_name=Pglyrp4;level=2;havana_gene=OTTMUSG00000022770.2

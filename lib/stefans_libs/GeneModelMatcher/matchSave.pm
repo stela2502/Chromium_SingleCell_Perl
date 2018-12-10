@@ -216,7 +216,30 @@ sub match_cigar{
 		}
 		$saveC .= " + $chr:$start-$end";
 	}
+	## Do I need a filter on what I want to return?
+	## Likely - If there is more than one possible match the most likely (spliced > exon > primary)
+	## So if I get more than one value back - should I go with CellRanger and ignore this?
+	## Yes I do that!
+	
+	## I need to use the strand information here!!
+	
+	my $inv;
+	map { $inv->{$ret->{$_}} ||= []; push(@{$inv->{$ret->{$_}}}, $_ ) } keys %$ret ;
+	#warn "\$inv = ".root->print_perl_var_def($inv ).";\n\$ret = ". root->print_perl_var_def($ret ).";\n";
+	
+	foreach my $best ( 'spliced', 'exon', 'primary' ) {
+		if ( defined $inv->{$best} ) {
+			if ( scalar@{$inv->{$best}} == 1 ) {
+				return { @{$inv->{$best}}[0] => $best };
+			}else {
+				return {};
+			}
+		}
+	}
+	
 	#warn "$chr, $start, $saveC: return matches for ".scalar( keys %$ret)." genes :". join(" ", keys %$ret )."\n";
 	return $ret;
 }
+
+
 1;
