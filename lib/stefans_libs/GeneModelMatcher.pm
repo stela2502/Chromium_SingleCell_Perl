@@ -172,7 +172,7 @@ sub genes_at_position_plus_one {
 }
 
 
-=head3 match_cigar ( $chr, $start, $cigar)
+=head3 match_cigar ( $chr, $start, $cigar, $FLAG)
 
 Matches the cigar information of a sam/bam file to the gene models - please use sorted bam/sam files as 
 the order speeds up this match enormousely!
@@ -182,7 +182,7 @@ returns the id of the matching genes id if any and an 'exon' match, 'spliced' ma
 =cut	
 
 sub match_cigar{
-	my ( $self, $chr, $start, $cigar) = @_;
+	my ( $self, $chr, $start, $cigar, $FLAG ) = @_;
 	## the cigar looks like 3S8M21445N87M
 	if ( $cigar =~ s/^(\d)+S// ) {
 		#warn "there was a $1 bp mismatch in the start of the read - adjust $start";
@@ -194,10 +194,10 @@ sub match_cigar{
 	unless ( $self->{'match_save'}->match( $chr, $start, $end) ){
 		my @matches = $self->genes_at_position_plus_one( $chr, $start, $end  );
 		#warn "rematch to genes $chr, $start, $end did produce ".scalar(@matches)." matching entries";
-		$self->{'match_save'}->Update( $self->{'id'}, $chr, $start, $end, @matches );
+		$self->{'match_save'}->Update( $self->{'id'}, $chr, $start, $end, $self->{'is10x'}, @matches );
 	}
 	#warn "matching the cigar $chr, $start, $cigar\n";
-	return $self->{'match_save'}->match_cigar( $chr, $start, $cigar );
+	return $self->{'match_save'}->match_cigar( $chr, $start, $cigar, $FLAG );
 }
 
 

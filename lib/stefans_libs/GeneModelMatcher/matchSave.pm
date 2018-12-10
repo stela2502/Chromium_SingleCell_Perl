@@ -86,7 +86,7 @@ sub match{
 	return 0 unless ( defined $self->{'next'});
 	return ($self->{'next'}->{'start'} > $end and $self->{'chr'} eq $chr);	
 }
-=head3 Update( $nameTag, $chr, $start, $end, @geneModels )
+=head3 Update( $nameTag, $chr, $start, $end, $is10x, @geneModels )
 
 re-inits all and stores the information
 
@@ -94,12 +94,13 @@ returns 1 => OK 0 => no
 
 =cut
 sub Update {
-	my ( $self, $nameTag, $chr, $start, $end, @geneModels ) = @_;
+	my ( $self, $nameTag, $chr, $start, $end, $is10x, @geneModels ) = @_;
 	if ( scalar(@geneModels) == 0 ){
 		## OK rest of the chromosome is not informative - Match to all other queries and always return a empty results hash!
 		$self->{'skip_rest'} = $chr;
 		return $self;
 	}
+	$self->{is10x} = $is10x;
 	$self->{'nameTag'} = $nameTag;
 	$self->{'chr'} = $chr;
 	$self->{'next'} = pop(@geneModels);
@@ -150,11 +151,14 @@ $ret = {
 =cut
 
 sub match_cigar{
-	my ( $self, $chr, $start, $cigar ) = @_;
+	my ( $self, $chr, $start, $cigar, $FLAG, $useOld ) = @_;
 	my $saveC;
 	# cigar like 8M21445N87M
 	my $ret = {};
 	$self->{'slast_start'} ||= $start;
+	Carp::confess ( "Lib Change - please also submitt the FLAG value\n" ) unless ( defined $FLAG);
+	my $antisense = ($FLAG & 0x10) != 0;
+	
 	Carp::confess( "This function requres to get ordered start positions and the last wone was after this one.\nThis will lead to errors!\n" )
 		if ( $self->{'slast_start'} > $start);
 	if ( $self->{'skip_rest'} eq $chr ){
@@ -170,7 +174,15 @@ sub match_cigar{
 	#warn "I have set the start to $start and end to $end\n";
 	if ( $start < $self->{'next_model_change'} ) {
 		#warn ref($self).": I use the old match ($start < $self->{'next_model_change'})\n" if (1);
-		$ret = $self->{'last_match'};
+		$useOld = 1;
+		
+	}
+	else {
+		$self->{'last_match'} = {};
+		$useOld = 0;
+	}
+	if ( $useOld and defined  $self->{'last_match'}->{$antisense} ) {
+		$ret = $self->{'last_match'}->{$antisense};
 	}
 	else {
 		#warn "matching first part: $chr:$start-$end ( I have ".scalar(@{$self->{'models'}})." gene models to match with)\n";
@@ -180,15 +192,19 @@ sub match_cigar{
 				if ( $geneModel->match( $start, $end, 10 ) ){
 					#warn "ret $geneModel->{'info'}->{$self->{'nameTag'}} set to 'exon'";
 					$ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} = 'exon';
+					
 				}else {
 					#warn "ret $geneModel->{'info'}->{$self->{'nameTag'}} set to 'primary'";
 					$ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} = 'primary';
+				}
+				if ( $self->{'is10x'} and ( $antisense != ($geneModel->{'orientation'} eq "-") ) ) {
+						$ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} .= "_antisense";
 				}
 				my $tmp = $geneModel->NextChange( $start );
 				$self->{'next_model_change'} = $tmp if ( $tmp < $self->{'next_model_change'} or $self->{'next_model_change'} ==0);
 			}
 		}
-		$self->{'last_match'} = {map { $_ => $ret->{$_}} keys %$ret}; ## copy this hash as that could be modified later.
+		$self->{'last_match'}->{$antisense} = {map { $_ => $ret->{$_}} keys %$ret}; ## copy this hash as that could be modified later.
 	}
 	if ( $cigar =~ m/\d/ ) {
 		#warn ( "OK there might be more to this - I could find a spliced hit" );
@@ -209,6 +225,9 @@ sub match_cigar{
 				}else {
 					$ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} = 'primary';
 				}
+				if ( $self->{'is10x'} and ( $antisense != ($geneModel->{'orientation'} eq "-") ) ) {
+						$ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} .= "_antisense";
+				}
 			}elsif ( defined $ret->{$geneModel->{'info'}->{$self->{'nameTag'}}} ) {
 				#warn "no match for $chr:$start-$end to gene $geneModel->{'info'}->{$self->{'nameTag'}}: ret $geneModel->{'info'}->{$self->{'nameTag'}} removed";
 				delete( $ret->{$geneModel->{'info'}->{$self->{'nameTag'}}}  ) ;
@@ -227,7 +246,8 @@ sub match_cigar{
 	map { $inv->{$ret->{$_}} ||= []; push(@{$inv->{$ret->{$_}}}, $_ ) } keys %$ret ;
 	#warn "\$inv = ".root->print_perl_var_def($inv ).";\n\$ret = ". root->print_perl_var_def($ret ).";\n";
 	
-	foreach my $best ( 'spliced', 'exon', 'primary' ) {
+	foreach my $best ( 'spliced', 'exon', 'primary',
+	 'spliced_antisense', 'exon_antisense', 'primary_antisense' ) {
 		if ( defined $inv->{$best} ) {
 			if ( scalar@{$inv->{$best}} == 1 ) {
 				return { @{$inv->{$best}}[0] => $best };

@@ -1,7 +1,7 @@
 #! /usr/bin/perl
 use strict;
 use warnings;
-use Test::More tests => 3;
+use Test::More tests => 6;
 BEGIN { use_ok 'stefans_libs::GeneModelMatcher' }
 
 use File::Spec::Functions;
@@ -41,7 +41,7 @@ $OBJ -> {'gtf_file'}->GeneFreeSplits(); ## define the gene free splits in order 
 
 is_deeply( scalar(@values), 2 , "got two results models back" );
 
-$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M" );
+$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M", 16 );
 
 $exp = {'ENSMUSG00000056054.9' => 'spliced'};
 
@@ -49,10 +49,15 @@ is_deeply( $value, $exp , "match_cigar with spliced cigar info" );
 
 
 #90726952        90727000
-$value = $OBJ->match_cigar( 'chr3', 90726952, "48M" );
+$value = $OBJ->match_cigar( 'chr3', 90726952, "48M", 16 );
+
+$exp = {'ENSMUSG00000042250.13' => 'exon_antisense'};
+
+
+$value = $OBJ->match_cigar( 'chr3', 90726952, "48M", 0 );
 
 $exp = {'ENSMUSG00000042250.13' => 'exon'};
 
 #is_deeply( $value, $exp , "match_cigar with spliced cigar info" );
 
-print "\$exp = ".root->print_perl_var_def( $value ).";\n";
+#print "\$exp = ".root->print_perl_var_def( $value ).";\n";

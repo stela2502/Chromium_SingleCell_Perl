@@ -14,7 +14,11 @@ my ( $value, @values, $exp );
 
 my $filename = File::Spec->catfile($plugin_path, 'data','GOI.annotation.genecode.v12.gff3');
 
-my $OBJ = stefans_libs::GeneModelMatcher -> new({'debug' => 1, 'filename' => $filename});
+my $OBJ = stefans_libs::GeneModelMatcher -> new({
+	'debug' => 1, 
+	'filename' => $filename,
+	'is10x' => 1,
+});
 is_deeply ( ref($OBJ) , 'stefans_libs::GeneModelMatcher', 'simple test of function stefans_libs::gtf_file::GeneModelMatcher -> new() ');
 
 #print "\$exp = ".root->print_perl_var_def( $OBJ->{'data'}  ).";\n";
@@ -74,23 +78,31 @@ is_deeply( $values[1]->AsHash() , $exp , "right internals 2" );
 
 ## and now lets try to use the match_cigar
 
-$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M" );
+$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M", '0' );
 
 $exp = {'ENSMUSG00000056054.9' => 'spliced'};
 
 is_deeply( $value, $exp , "match_cigar with spliced cigar info" );
 
-$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M" );
+$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M", '16' );
+
+$exp = {'ENSMUSG00000056054.9' => 'exon_antisense'};
+
+$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M", '0' );
 
 $exp = {'ENSMUSG00000056054.9' => 'exon'};
 
 is_deeply( $value, $exp , "match_cigar with exon cigar info" );
 
-$value = $OBJ->match_cigar( 'chr3', 90669102, "4S120M" );
+$value = $OBJ->match_cigar( 'chr3', 90669102, "4S120M", '16' );
 
-$exp = {'ENSMUSG00000056054.9' => 'primary'};
+$exp = {'ENSMUSG00000056054.9' => 'primary_antisense'};
 
 is_deeply( $value, $exp , "match_cigar with intron cigar info" );
+
+$value = $OBJ->match_cigar( 'chr3', 90669102, "4S120M", '0' );
+
+$exp = {'ENSMUSG00000056054.9' => 'primary'};
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
 
@@ -111,7 +123,7 @@ $exp = [
 ];
 is_deeply( $OBJ->{'gtf_file'}->{'data'}, $exp, "correct gene information chr3 only" );
 
-$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M" );
+$value = $OBJ->match_cigar( 'chr3', 90668978, "4S120M209N10M" , 16);
 
 $exp = {'ENSMUSG00000056054.9' => 'spliced'};
 
@@ -173,7 +185,7 @@ $OBJ -> {'gtf_file'}->GeneFreeSplits(); ## define the gene free splits in order 
 
 @values = $OBJ->genes_at_position_plus_one('JH792828.1', '217593',  '217674' );
 
-is_deeply( scalar(@values), 3 , "got two results models back" );
+is_deeply( scalar(@values), 3 , "got three results models back (".scalar(@values).")" );
 
 
 

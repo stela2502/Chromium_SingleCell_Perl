@@ -28,7 +28,9 @@
        
        -fastqPath :The path where the original fastq files were converted to the here used input files
        -sampleID  :The sampleID of the 10X sample to process
-       
+       -is10x     :10x data reads aligne on the same strand as the RNA is from.
+                   this is used to identify matching genes - set to 0 is you are not using 10x data here!
+                   
       -asDatabase :Export the data as database, not tables (default not used)
       
        -options  : format: key_1 value_1 key_2 value_2 ... key_n value_n
@@ -82,7 +84,7 @@ my $VERSION = 'v1.0';
 #Lpo start 87806428
 #Mpo end   87804413
 my (
-	$help,    $debug,   $database,  $infile,   $gtf_file, $drop_chr,
+	$help,    $debug,   $database,  $infile,   $gtf_file, $drop_chr, $is10x,
 	$outfile, $options, $fastqPath, $sampleID, @options,  $asDatabase, $bugfix
 );
 
@@ -96,6 +98,7 @@ Getopt::Long::GetOptions(
 	"-sampleID=s"   => \$sampleID,
 	"-asDatabase"   => \$asDatabase,
 	"-bugfix"       => \$bugfix,
+	"-is10x=s"		=> \$is10x,
 
 	"-help"  => \$help,
 	"-debug" => \$debug
@@ -123,7 +126,10 @@ unless ( -d $fastqPath ) {
 unless ( defined $sampleID ) {
 	$error .= "the cmd line switch -sampleID is undefined!\n";
 }
-
+unless ( defined $is10x) {
+	$warn .= "assuming 10x data\n";
+	$is10x = 1;
+}
 if ($help) {
 	print helpString();
 	exit;
@@ -154,6 +160,7 @@ $task_description .= ' -drop_chr ' . $drop_chr if ( defined $drop_chr );
 $task_description .= ' -sampleID ' . $sampleID;
 $task_description .= ' -asDatabase' if ($asDatabase);
 $task_description .= ' -bugfix' if ($bugfix);
+$task_description .= ' -is10x $is10x' if (defined $is10x );
 
 for ( my $i = 0 ; $i < @options ; $i += 2 ) {
 	$options[ $i + 1 ] =~ s/\n/ /g;
@@ -186,7 +193,10 @@ my $self = {
 #$| = 1; ## rather not do that now that I have automated the scripts :-)
 
 my $fm = root->filemap($outfile);
-mkdir( $fm->{'path'} ) unless ( -d $fm->{'path'} );
+unless ( -d $fm->{'path'} ){
+	mkdir( $fm->{'path'} )
+}
+
 
 open( LOG, ">$outfile.log" ) or die "I could not create the log file '$outfile.log'\n$!\n";
 print LOG $task_description . "\n";
@@ -203,8 +213,11 @@ else {
 	$outfile .= ".sqlite" unless ( $outfile =~ m/\.sqlite$/ );
 }
 
-if ( -f $outfile ) {
-	warn"I am going to add data to the outfile '$outfile'\nremove this file if you want to recreate it.\n";
+## the real outfile here is 
+my $tmp = $outfile;
+$tmp =~ s!.sqlite$!/matrix.mtx!;
+if ( -f $tmp ) {
+	warn "I am going to add data to the outfile(s) '$tmp'\nremove this file if you want to recreate it.\n";
 }
 
 my $result = stefans_libs::result_table->new(
@@ -242,7 +255,8 @@ my $GeneModelMatcher = stefans_libs::GeneModelMatcher->new(
 	{ 
 		'collect_over' => $options->{'quantify_over'} , 
 		'collect' => $options->{'quantify_on'},
-		'id' => $options->{'report_on'} 
+		'id' => $options->{'report_on'}, 
+		'is10x' => $is10x,
 	} );
 
 print "I read the chr $drop_chr from the gtf file\n" if ( defined $drop_chr );
@@ -458,9 +472,10 @@ sub filter {
 	  "I have got a read for sample $sample_name $bam_line[2], $bam_line[3]\n"
 	  if ($bugfix);
 	## start with the real matching
-	warn "Not using FLAG==16 here!}\n";
+	#warn "Not using FLAG==16 here!}\n";
 	#TODO: use @bam_line[1] == 16 AND GET THE RIGHT SEQUENCE BACK! giving an edge above cellranger!
-	&add_to_summary( $sample_name, $GeneModelMatcher->match_cigar( @bam_line[2,3,5] ) ) ; ##chr start cigar 
+	## I get a @bam_line[1] == 16 if the gene is in antisens (orientation -) using 10x data
+	&add_to_summary( $sample_name, $GeneModelMatcher->match_cigar( @bam_line[2,3,5,1] ) ) ; ##chr start cigar 
 
 }
 
@@ -608,10 +623,10 @@ sub add_2 {
 	if ( $where->Lines() > 1000 ) {
 		#print "I am storing 1950 gene results in the tables\n";
 		if ($asDatabase) {
-			$where->print2file( undef, 950 );
+			$where->print2file( undef, 700 );
 		}
 		else {
-			$where->print2table( undef, 950 );
+			$where->print2table( undef, 700 );
 		}
 
 	}
