@@ -609,8 +609,8 @@ sub sql_create_summary_tables {
 	my ( $self ) = @_;
 	foreach my $statement ( 'create table s_number_of_reads ( sample_id integer, count integer);',
 'insert into s_number_of_reads ( sample_id, count )  select sample_id, count(value) from datavalues  group by sample_id ;',
-'create table g_number_of_reads ( gene_id integer, count integer, expressed integer, spliced integer);',
-'insert into g_number_of_reads ( gene_id, count, expressed, spliced )  select sample_id, count(value), sum(value), sum(spliced) from datavalues  group by sample_id ;'
+'create table g_number_of_reads ( gene_id integer, count integer, expressed integer);',
+'insert into g_number_of_reads ( gene_id, count, expressed)  select sample_id, count(value), sum(value) ) from datavalues  group by sample_id ;'
 	){
 		$self->{'dbh'}->do($statement);
 	}
@@ -742,8 +742,7 @@ sub prepare_data_table {
 						@{ $data->{'data'} },
 						[
 							++$data_id, $self->sample2id($_),
-							$gene_id,   $hash->{$_},
-							0
+							$gene_id,   $hash->{$_}
 						]             ## default spliced to 0
 					) if ( defined $hash->{$_} );
 					$key = [ $self->sample2id($_), $gene_id ];
