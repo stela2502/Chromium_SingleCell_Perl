@@ -554,25 +554,25 @@ sub QuantifyBamFile_CMD {
 	my $bam_file = shift;
 	my $fm       = root->filemap($bam_file);
 	my $chr_slice;
-	if ( $bam_file =~ m/.(chr[\w\d]+:\d+-\d+)/ ) {
+	if ( $bam_file =~ m/$sname\.([\w\d\.]+:\d+-\d+)/ ) {
 		$chr_slice = $1;
+		#die "I use this chr slice: $chr_slice\n";
 	}
 	else {
 		$chr_slice = 'chrunknown_slice';
 	}
-	my @tmp = split( /chr/, $chr_slice );
-	$chr_slice = 'chr' . pop(@tmp);
-	my $opath = "$fast_tmp/$chr_slice" . "_$sname";
-	$opath =~ s/\./_/g;
-	$opath .= "_$fm->{'filename_base'}";
+	#my @tmp = split( /chr/, $chr_slice );
+	#$chr_slice = 'chr' . pop(@tmp);
+	my $opath = "QUANT_$chr_slice";
+	$opath =~ s/[:\.]/_/g;
 
 	if ( -d $opath ) {
-		system( 'rm -RF ' . $opath );
+		system( 'rm -RF ' . "$fast_tmp/$opath" );
 	}
 	my $cmd = "QuantifyBamFile.pl";
 
 	$cmd .= " -infile $bam_file";
-	$cmd .= " -outfile $opath.sqlite";
+	$cmd .= " -outfile $fast_tmp/$opath.sqlite";
 	$cmd .= ' -options ' . $slurmOptions
 	  if ( defined $options[0] );
 	$cmd .= " -fastqPath $outpath";
@@ -592,9 +592,9 @@ sub QuantifyBamFile_CMD {
 
 	$cmd .= " -debug" if ($debug);
 
-	$cmd .= "\nmv $opath $outpath/";
+	$cmd .= "\nmv $fast_tmp/$opath $outpath/";
 
-	return ( $cmd, "$outpath/$chr_slice" . "_$sname/" );
+	return ( $cmd, "$outpath/$opath" );
 }
 
 sub byFileSize {

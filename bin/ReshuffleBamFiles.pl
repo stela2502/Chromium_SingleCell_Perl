@@ -169,7 +169,7 @@ if ( -f $gtf ) {
 		  . " -gtf  $gtf"
 		  . " -coverage $coverage"
 		  . " -outfile $outpath/chr_splits.txt"
-		  . " -step 5000000";
+		  . " -step 50000000";
 		print $cmd;
 		system($cmd );
 	}
@@ -184,9 +184,12 @@ if ( -f $gtf ) {
 		}
 	}
 	close(IN);
-	print "Done\n";
+	print "genome annotation file reading - finished\n";
+	@chrs = (keys %$chr_splices);
 }
 
+warn "I am going to merge/split the ". scalar(@bams)." bam files into ".scalar(keys %$chr_splices)." chromosomal areas\n";
+warn  "tmp folder $tmp_path\n";
 sub byFileSize {
 	-s $b <=> -s $a;
 }
@@ -207,7 +210,11 @@ my $SLURM = stefans_libs::SLURM->new()
 
 FILES:
 foreach my $file ( sort byFileSize @bams ) {
-	my $pid = $pm->start and next FILES;
+	#warn "Processing file $file\n";
+	my $pid;
+	unless ( $debug ) {
+		$pid = $pm->start and next FILES;
+	} 
 	my $fm = root->filemap($file);
 	my ( $cmd, $ofile );
 	unless ( -f "$file.bai" ) {
@@ -215,12 +222,16 @@ foreach my $file ( sort byFileSize @bams ) {
 		system("samtools index $file") unless ($debug);
 	}
 	my $in;
+	#warn "split over ".scalar(@chrs). " chromosomes\n";
 	foreach my $chr (@chrs) {
 		unless ( $chr =~ m/^chr/ ) {
-			$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
+			#$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
 		}
-
+		unless ( defined $chr_splices->{$chr} ){
+			Carp::confess("ReshuffleBamFiles internal error - \$chr_splices does not contain key $chr\n");
+		}
 		foreach my $slice ( @{ $chr_splices->{$chr} } ) {
+			#warn "processing slice $slice\n";
 			unless ($debug) {
 				$ofile = File::Spec->catfile( $tmp_path,
 					$chr . "_OP_" . $fm->{'filename'} . ".$slice.bam" );
@@ -235,7 +246,7 @@ foreach my $file ( sort byFileSize @bams ) {
 			unless ( -f $ofile ) {    ## the final outfile exists
 
 				$cmd = "samtools view -b $file $slice > $ofile";
-
+				#warn "starting $cmd\n";
 				push( @ofiles, $ofile );
 				## at the moment I need to restart the tool quite often and I do not want to re-create all from scratch.
 				unless ($debug) {
@@ -255,21 +266,28 @@ foreach my $file ( sort byFileSize @bams ) {
 		}
 	}
 
-	$pm->finish;    # Terminates the child process
+	unless ( $debug ) {
+		$pm->finish;    # Terminates the child process
+	}
 }
-
-$pm->wait_all_children;
+unless ( $debug ) {
+	$pm->wait_all_children;
+}
 
 MERGES:
 foreach my $chr (@chrs) {
 	my $pid = $pm->start and next MERGES;
 
-	unless ( $chr =~ m/^chr/ ) {
-		$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
+	#unless ( $chr =~ m/^chr/ ) {
+	#	$chr = "chr$chr";    ## we use --add-chrname in the hisat2 call
+	#}
+	
+	unless ( defined $chr_splices->{$chr} ){
+		Carp::confess("ReshuffleBamFiles internal error - \$chr_splices does not contain key $chr\n");
 	}
 	foreach my $slice ( @{ $chr_splices->{$chr} } ) {
 		next
-		  if ( -f $outpath . $chr . "_" . $sampleID . ".$slice.sorted.bam" )
+		  if ( -f $outpath . $chr . "_" . $sampleID . ".$slice.sorted.*bam" )
 		  ;                  ## the final outfile exists
 
 		my ( $cmd, $ofile, $ifiles, @tmp );
@@ -280,7 +298,7 @@ foreach my $chr (@chrs) {
 		if (
 			scalar(
 				@tmp = $SLURM->get_files_from_path(
-					$outpath, $chr . "_OP_*$slice.bam"
+					$outpath, $chr . "_OP_*$slice.*bam"
 				)
 			) == 1
 		  )
