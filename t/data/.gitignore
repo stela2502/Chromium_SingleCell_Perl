@@ -3,3 +3,8 @@
 /HSC_data.xls
 /HSC_data.xls.gz
 /GOI_list.txt
+/10xpipeline/
+/IdentifyGeneFreeRegions/
+/JoinResultTables/
+/QuantifBamFile_Fake_fastq_folder/
+/ReshuffleBamFiles/
