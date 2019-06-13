@@ -28,7 +28,9 @@
        -infile       :the input tab separated table file
        -outfile      :the sqlite database name
 	   -gene_first   :the gene is in the first column not in the last (default)
-
+       -sampleIDs    :an optional file containing the sample IDS in rows or column, 
+                      but no spaces and not more than one ID per cell 
+       
        -help           :print this help
        -debug          :verbose output
    
@@ -44,6 +46,7 @@ use Getopt::Long;
 use Pod::Usage;
 
 use stefans_libs::database::Chromium_SingleCell::datavalues;
+use stefans_libs::result_table;
 use stefans_libs::database::SQLiteBatch;
 
 use strict;
@@ -55,12 +58,13 @@ my $plugin_path = "$FindBin::Bin";
 my $VERSION = 'v1.0';
 
 
-my ( $help, $debug, $database, $infile, $outfile, $gene_first);
+my ( $help, $debug, $database, $infile, $outfile, $sampleIDs, $gene_first);
 
 Getopt::Long::GetOptions(
 	 "-infile=s"    => \$infile,
 	 "-outfile=s"    => \$outfile,
 	 "-gene_first" => \$gene_first,
+	 "-sampleIDs=s"  => \$sampleIDs,
 
 	 "-help"             => \$help,
 	 "-debug"            => \$debug
@@ -102,7 +106,7 @@ $task_description .= 'perl '.$plugin_path .'/XLS_to_SQLite.pl';
 $task_description .= " -infile '$infile'" if (defined $infile);
 $task_description .= " -outfile '$outfile'" if (defined $outfile);
 $task_description .= " -gene_first" if ( $gene_first );
-
+$task_description .= " -sampleIDs $sampleIDs" if (-f $sampleIDs );
 
 use stefans_libs::Version;
 my $V = stefans_libs::Version->new();
@@ -127,6 +131,29 @@ if ( $infile =~ m/.gz$/ ) {
 	open ( IN, "<$infile" ) or die "I could not read from '$infile'\n$!\n";
 }
 my (@samples,@tmp, $gene_id,$gname, $samples, $genes, $data);
+
+if ( -f $sampleIDs ) {
+	open ( SAM , "<$sampleIDs") or die $!;
+	my @tmp;
+	while( <SAM> ) {
+		chomp;
+		push ( @tmp, split(/\s+/, $_) );
+	}
+	close ( SAM );
+	@samples = (@tmp) if ( scalar(@tmp) > 0);
+	print "samples like ", join(", ", @samples[1..10])."\n";
+}
+
+
+my $result = stefans_libs::result_table->new(
+	{
+		filename               => $outfile,
+		'data_storage_spliced' => 0,
+		#	'table_path'           => $drop_chr # not use - might crap things up
+	}
+);
+
+
 my $entries = 0;
 
 ## you might want to re-code that using https://stackoverflow.com/questions/364017/faster-bulk-inserts-in-sqlite3
@@ -140,6 +167,9 @@ $samples ->Add_2_Header( ['id', 'sname']);
 $data = data_table->new();
 $data -> Add_2_Header( ['id', 'sample_id', 'gene_id', 'value']);
 my $data_id = 1;
+
+
+## change everything to work with result_table instead! That is way more memory efficient
 
 while ( <IN> ) {
 	chomp();
@@ -156,33 +186,38 @@ while ( <IN> ) {
 		map { 
 			push(@{$samples->{'data'}}, [$i++, $_ ] ) 
 		} @tmp;
-		$batch -> batch_import ( $obj->{'samples'}, $samples );
-		@samples = @{$samples->GetAsArray('id')};
+	#	$batch -> batch_import ( $obj->{'samples'}, $samples );
+		#@samples = @{$samples->GetAsArray('id')};
 		#$obj -> batch_mode(1);
+		@samples = (@tmp);
+		#die "I have changed the samples to something like ".join(", ", @samples[1..10] )."\n";
 		next;
 	}
+	
+	## process the data line
 	@tmp = 	split("\t", $_);
 	if ( $gene_first ){
 		$gname = shift(@tmp)
 	}else {
 		$gname = pop(@tmp)
 	}
-	push(@{$genes->{'data'}}, [$gene_id, $gname]);
-		
+	
 	for ( my $i = 0; $i < @tmp; $i++ ) {
-		if ( $tmp[$i] =~ m/\d/ ) {
-			$entries ++;
-			my $a = [$data_id ++, $i+1, $gene_id, $tmp[$i]];
-			push( @{$data->{'data'}}, $a ) if ( $tmp[$i] != 0);
-			#$obj -> AddDataset( { 'gene_id' => $gene_id, 'sample_id' => $samples[$i], 'value' => $tmp[$i]} );
+		if ( $tmp[$i] != 0) {
+			$result->AddDataset(
+			{ 'Gene_ID' => $gname, 'Sample_ID' => $samples[$i], 'value' => $tmp[$i] },
+			1 );
+			$entries+=1;
 		}
-		#$obj -> commit();
+	}
+	if ( $result->Lines() > 1000 ) {
+		$result->print2file( undef, 999 );
 	}
 	$gene_id ++;
 	print "done with line $gname ( $gene_id genes and a total of $entries expression values )\n" if ($gene_id  % 100 == 0);
 }
-$batch -> batch_import ( $obj->{'genes'}, $genes );
-$batch -> batch_import ( $obj, $data );
+
+$result->print2file();
 
 
 print "$entries values stored in the database '$outfile'\n";
