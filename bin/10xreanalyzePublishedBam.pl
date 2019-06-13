@@ -251,17 +251,21 @@ else {
 }
 
 $start_this = &check_time_since( $start_this,
-	'merge R1, R2 and I1 reads + polyA and low quality filter', $SLURM_ids );
+	'Split Bam file into (max 10*1^6 reads big) fastq files', $SLURM_ids );
 
 #hisat2_run_aurora.pl
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 
+my @tmp = get_files_from_path( $outpath, "*.fastq.gz" );
+
+
+
 my $hisat2 =
     "hisat2_run_aurora.pl -files '"
-  . join( "' '", @$sumFastqs )
+  . join( "' '", @tmp )
   . "' -outpath $outpath/HISAT2_mapped/"
   . " -mapper_options ' --score-min L,-0.0,-0.4'" ## relax the mapper efficiency from L,0.0,-0.2 # experimentall checked against cellranger results.
-  . " -options n 5 partitition $options->{'p'} A " . $options->{'A'};
+  . " -options t '06:00:00' n 5 partitition $options->{'p'} A " . $options->{'A'};
 my $used = { map { $_ => 1 } qw( n A p N ) };
 while ( my ( $key, $value ) = each %{ $SLURM->{options}->options() } ) {
 	$hisat2 .= " '$key' '$value'" unless ( $used->{$key} );
@@ -714,9 +718,9 @@ sub SpitCell_CMD {
 		$cmd = 'Bam2Fastq_10x_GEO.pl';
 		$cmd .= " -infiles $bam";
 		$cmd .= " -outpath $fast_tmp";
-		$cmd .= " -options oname $ofile" . $slurmOptions;
+		$cmd .= " -options sname $ofile" . $slurmOptions;
 		$cmd .= " -debug" if ($debug);
-		$cmd .= "\nmv $fast_tmp/$ofile.annotated.fastq.gz $outpath\n";
+		$cmd .= "\nmv $fast_tmp/$ofile.annotated.*fastq.gz $outpath\n";
 		$cmd .= "\nmv $fast_tmp/$ofile.per_cell_read_count.xls $outpath\n";
 		$cmd .= "mv $fast_tmp/$ofile*_SplitToCells.pl.log $outpath\n";
 	}
@@ -748,10 +752,10 @@ sub SplitToCell_local {
 
 		my $cmd = &SpitCell_CMD( $bam[$i], $fast_tmp, $ofile );
 		if ($debug) {
-			system( 'touch ' . "$outpath/$ofile.annotated.fastq.gz" );
+			system( 'touch ' . "$outpath/$ofile.annotated.1.fastq.gz" );
 		}
 		else {
-			unless ( -f "$outpath/$ofile.annotated.fastq.gz" ) {
+			unless ( -f "$outpath/$ofile.annotated.1.fastq.gz" ) {
 
 				warn
 "the outfile '$outpath/$ofile.annotated.fastq.gz' is missing\n";
@@ -760,7 +764,7 @@ sub SplitToCell_local {
 					$SLURM_local->run(
 						$cmd,
 						"$outpath/$ofile.SplitToCell",
-						"$outpath/$ofile.annotated.fastq.gz"
+						"$outpath/$ofile.per_cell_read_count.xls"
 					)
 				);
 			}
@@ -777,7 +781,7 @@ sub SplitToCell_local {
 
 	opendir( DIR, $outpath );
 	@fastqs =
-	  map { "$outpath/$_" } grep { /.annotated.fastq.gz$/ } readdir(DIR);
+	  map { "$outpath/$_" } grep { /.annotated.*fastq.gz$/ } readdir(DIR);
 	closedir(DIR);
 
 	return ( [], \@fastqs );

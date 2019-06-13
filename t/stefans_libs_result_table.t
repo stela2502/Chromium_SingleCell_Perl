@@ -422,7 +422,7 @@ $exp->AddDataset(
 $exp->print2table( $tmp[1] );
 
 ## now I need to regenerate my exp table....
-$exp = stefans_libs::result_table->new( { 'data_storage_spliced' => 1 } );
+$exp = stefans_libs::result_table->new( { 'data_storage_spliced' => 0 } );
 
 $exp->AddDataset(
 	{

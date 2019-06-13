@@ -36,7 +36,8 @@
    
 =head1 DESCRIPTION
 
-  Use the output from SplitToCells and drop all reads from the fastq files that do not belong to a cell with more than 100 reads in any of the analysies.
+  Use the output from SplitToCells and drop all reads from the fastq files 
+  that do not belong to a cell with more than 100 reads in any of the analysies.
 
   To get further help use 'DropUselessFastqReads.pl -help' at the comman line.
 

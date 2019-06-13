@@ -155,6 +155,9 @@ sub AddDataset {
 		$key->{ $hash->{'Gene_ID'} } = scalar( @{ $self->{'data'} } - 1 );
 	}
 	if ($add) {
+		#warn "I add for gene $hash->{'Gene_ID'} and sample $hash->{'Sample_ID'} $hash->{'value'} to my value ".
+		#	@{ @{ $self->{'data'} }[ $key->{ $hash->{'Gene_ID'} } ] }[ $self->Add_2_Header( $hash->{'Sample_ID'} ) ]."\n";
+			
 		@{ @{ $self->{'data'} }[ $key->{ $hash->{'Gene_ID'} } ] }
 		  [ $self->Add_2_Header( $hash->{'Sample_ID'} ) ] += $hash->{'value'};
 	}
@@ -494,13 +497,14 @@ sub export2file {
 	else {
 		@order = (1);
 	}
+	if ( -f $ofile ) {
+		open( OUT, ">>$ofile" ) or die "could not add to file '$ofile'\n$!";
+	}
+	else {
+		open( OUT, ">$ofile" ) or die "could not create file '$ofile'\n$!";
+	}
 	if ( $obj->Lines() > 0 ) {
-		if ( -f $ofile ) {
-			open( OUT, ">>$ofile" ) or die "could not add to file '$ofile'\n$!";
-		}
-		else {
-			open( OUT, ">$ofile" ) or die "could not create file '$ofile'\n$!";
-		}
+		
 		while ( my $line = shift( @{ $obj->{'data'} } ) ) {
 #			warn "export to $ofile in order"
 #			  . join( " ", @order )
@@ -508,8 +512,8 @@ sub export2file {
 #			  . join( " ", @$line[@order] ) . "\n";
 			print OUT join( " ", @$line[@order] ) . "\n";
 		}
-		close(OUT);
 	}
+	close(OUT);
 	return $self;
 }
 
@@ -526,7 +530,7 @@ sub print2table {
 	}else {
 		$outpath = File::Spec->catfile( $fm->{'path'}, $fm->{'filename_base'} );
 	}
-	print "result_table is exporting to $outpath\n";
+	print "result_table is exporting to '$outpath' with ".scalar(@{$self->{'header'}})." cells and ".scalar(@{$self->{'data'}})." genes\n";
 	mkdir($outpath) unless ( -d $outpath );
 	my $ofile;
 
@@ -605,8 +609,8 @@ sub sql_create_summary_tables {
 	my ( $self ) = @_;
 	foreach my $statement ( 'create table s_number_of_reads ( sample_id integer, count integer);',
 'insert into s_number_of_reads ( sample_id, count )  select sample_id, count(value) from datavalues  group by sample_id ;',
-'create table g_number_of_reads ( gene_id integer, count integer, expressed integer, spliced integer);',
-'insert into g_number_of_reads ( gene_id, count, expressed, spliced )  select sample_id, count(value), sum(value), sum(spliced) from datavalues  group by sample_id ;'
+'create table g_number_of_reads ( gene_id integer, count integer, expressed integer);',
+'insert into g_number_of_reads ( gene_id, count, expressed)  select sample_id, count(value), sum(value) ) from datavalues  group by sample_id ;'
 	){
 		$self->{'dbh'}->do($statement);
 	}
@@ -738,8 +742,7 @@ sub prepare_data_table {
 						@{ $data->{'data'} },
 						[
 							++$data_id, $self->sample2id($_),
-							$gene_id,   $hash->{$_},
-							0
+							$gene_id,   $hash->{$_}
 						]             ## default spliced to 0
 					) if ( defined $hash->{$_} );
 					$key = [ $self->sample2id($_), $gene_id ];

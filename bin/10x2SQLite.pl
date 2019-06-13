@@ -124,7 +124,11 @@ my $file;
 
 foreach $file ( 'matrix.mtx', 'genes.tsv', 'barcodes.tsv' ) {
 	unless ( -f File::Spec->catfile( $path, $file ) ) {
-		$error .= "File '$file' missing from the path $path\n";
+		if (  -f File::Spec->catfile( $path, $file.'.gz' )) {
+			system( 'gunzip '. File::Spec->catfile( $path, $file.'.gz' ))
+		}else{
+			$error .= "File '$file' missing from the path $path\n";
+		}
 	}
 }
 if ( $error =~ m/\w/ ) {

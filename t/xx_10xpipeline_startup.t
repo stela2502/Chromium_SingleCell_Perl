@@ -18,7 +18,7 @@ ok( -f $exec, 'the script has been found' );
 $outpath = "$plugin_path/data/output/10xpipeline_debug";
 if ( -d $outpath ) {
 
-	#	system("rm -Rf $outpath/*");
+	system("rm -Rf $outpath/*");
 }
 
 chdir($outpath);
