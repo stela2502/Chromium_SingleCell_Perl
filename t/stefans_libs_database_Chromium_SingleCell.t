@@ -16,7 +16,7 @@ if ( -d $path ) {
 	system( "mkdir -p $path" );
 }
 
-my $obj = stefans_libs::database::Chromium_SingleCell::datavalues -> new( $path."database.db" );
+my $obj = stefans_libs::database::Chromium_SingleCell::datavalues -> new( { file=> $path."database.db"} );
 
 is_deeply ( ref($obj) , 'stefans_libs::database::Chromium_SingleCell::datavalues', 'simple test of function stefans_libs::database::Chromium_SingleCell::datavalues -> new()' );
 

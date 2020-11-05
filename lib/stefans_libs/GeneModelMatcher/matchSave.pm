@@ -35,7 +35,7 @@ stefans_libs::GeneModelMatcher::matchSave
 
 =head1 DESCRIPTION
 
-stores information to the last match
+stores information to the last match of a read to a gene.
 
 =head2 depends on
 

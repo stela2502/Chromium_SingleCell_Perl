@@ -65,8 +65,9 @@ my $cmd =
   . " -outpath "
   . $outpath
   . " -sname sampleX"
-  . " -local"
-  . " -debug";
+ # . " -local"
+ # . " -debug"
+  ;
 
 sub fcontent {
 	my $f = shift;
@@ -85,12 +86,13 @@ print "Run time: $duration s\n";
 
 #print "\$exp = ".root->print_perl_var_def($value ).";\n";
 
-ok( -d $outpath, "outpath created" );
+ok( -d $outpath, "outpath created '$outpath'" );
 my $run_folder = $outpath . "/10xpipeline_run_files";
-ok( -d $run_folder, "run filkes folder" );
+ok( -d $run_folder, "run files folder $run_folder" );
 
 ## In the main run folder I get all the merged fastq files:
 
+die();
 my @scripts1 = qw(
 HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh  HJ2GYBGX5_Ctrl-LSK_S7_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L001.annotated.fastq.sh
 HJ2GYBGX5_Ctrl-LSK_S5_L002.annotated.fastq.sh  HJ2GYBGX5_Ctrl-LSK_S7_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L002.annotated.fastq.sh
@@ -112,28 +114,17 @@ foreach (@scripts1) {
 
 ## HISAT scripts:
 my @hisat_scripts = qw(
-  hisat2_run.sh
-  HJ2GYBGX5_Ctrl-LSK_S5_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L001.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S5_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L002.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S5_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L003.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S5_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S5_L004.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S6_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L001.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S6_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L002.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S6_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L003.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S6_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S6_L004.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S7_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L001.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S7_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L002.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S7_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L003.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S7_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S7_L004.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S8_L001.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L001.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S8_L002.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L002.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S8_L003.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L003.annotated.fastq.sh
-  HJ2GYBGX5_Ctrl-LSK_S8_L004.annotated.fastq.sh  HTL2KBGX3_Ctrl-LSK_S8_L004.annotated.fastq.sh );
+  hisat2_run.sh );
 
 foreach (@hisat_scripts) {
 	ok( -f "$run_folder/$_", "script file '$_'" );
 	ok( scalar( grep( /SBATCH \-w/, &fcontent("$run_folder/$_") ) ) == 1,
 		"script $_ contains -w SLURM option" );
+		
+	unless ( -f "$run_folder/$_") {
+		print ("The HISAT run scripts are missing in the folder '$run_folder'!");
+		last;
+	}
 }
 
 my @hisat_fake_output =
@@ -157,6 +148,10 @@ my @hisat_fake_output =
 
 foreach (@hisat_fake_output) {
 	ok( -f "$run_folder/HISAT2_mapped/$_", "fake bam file '$_'" );
+	unless ( -f "$run_folder/HISAT2_mapped/$_" ){
+		print( "likely all others are faulghty, too - check this!");
+		last;
+	}
 }
 
 ## reshuffle output
@@ -192,6 +187,10 @@ my @reshuffle = qw(
 
 foreach (@reshuffle) {
 	ok( -f "$run_folder/reshuffled/$_", "reshuffled output bam '$_'" );
+	if ( ! -f "$run_folder/reshuffled/$_") {
+		print ( "files are not resuffeld? $run_folder/reshuffled/?");
+		last;
+	}
 }
 
 my @QuantD = qw(
@@ -206,12 +205,20 @@ my @QuantD = qw(
 
 foreach (@QuantD) {
 	ok( -d "$run_folder/$_", "Quantify output folders '$_'" );
+	if ( ! -f"$run_folder/$_" ){
+		print "All Quant out folders are missing?\n";
+		last;
+	}
 }
 
 
 foreach my $path (@QuantD) {
 	map { ok( -f "$run_folder/$path/$_", "opath $path ofile $_" ) }
 	  qw( barcodes.tsv genes.tsv matrix.mtx);
+	if ( -f "$run_folder/$path/matrix.mtx"){
+		print "the final outfiles to merge are missing (all?!)\n";
+		last;
+	}
 }
 
 ok( -f "$outpath/sampleX_FAKE_DEBUG.sqlite", "main outfile" );

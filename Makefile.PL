@@ -11,6 +11,8 @@ author 'Stefan Lang <Stefan.Lang@med.lu.se>';
 #requires 'Text::Levenshtein' => 0;
 requires 'PDL' => 0;
 requires 'PDL::NiceSlice' => 0;
+requires 'DBD::SQLite' => 0;
+requires 'Parallel::ForkManager' => 0;
 
 sub install_scripts_in_path {
         my ( $dir ) = @_;

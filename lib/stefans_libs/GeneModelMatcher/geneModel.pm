@@ -62,7 +62,7 @@ sub new{
 		Carp::confess ( "I expect a hash as last argument - not". $hash);
 	}
 	unless ( @data == 8 ) {
-		Carp::confess ( "I expect an 9 entry array as argument" );
+		Carp::confess ( "I expect an 9 entry array as argument - not ".(scalar(@data)+1) );
 	}
 	my ( $self );
 	#chr3	HAVANA	gene	37838468	37839573	.	+	.	$hash(ed information)

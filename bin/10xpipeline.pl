@@ -323,6 +323,7 @@ else {
 $start_this = &check_time_since( $start_this,
 	'merge R1, R2 and I1 reads + polyA and low quality filter', $SLURM_ids );
 
+die("Has this split worked?");
 #STAR_run_aurora.pl
 #print root::get_hashEntries_as_string($options,3, "the oSLURM ptions:");
 

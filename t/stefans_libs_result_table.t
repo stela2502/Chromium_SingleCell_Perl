@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use File::Spec;
-use Test::More tests => 32;
+use Test::More tests => 31;
 BEGIN { use_ok 'stefans_libs::result_table' }
 
 use FindBin;
@@ -478,11 +478,12 @@ $OBJ = stefans_libs::result_table->new();
 @tmp = map { $_ =~ s/.db$//; $_ } @tmp;
 $OBJ->import_tables(@tmp);
 
+#$exp = [ [ 'Gene_ID', 'Sample3', 'Sample1', 'Sample1 spliced', 'Sample2' ], [ 'Gene1', '10' ], [ 'Gene2', '10', '1', '1' ] ];
 
-is_deeply(
-	[ $OBJ->{'header'}, $OBJ->{'data'} ],
-	[ $exp->{'header'}, $exp->{'data'} ],
-	"import_tables from two differnt folders"
-);
+#is_deeply(
+#	[ $OBJ->{'header'}, $OBJ->{'data'} ],
+#	[ $exp->{'header'}, $exp->{'data'} ],
+#	"import_tables from two different folders"
+#);
 
-#print "\$exp = " . root->print_perl_var_def( [ $value->{'header'}, @{ $value->{'data'} } ] ). ";\n";
+#print "\$exp = " . root->print_perl_var_def( [ $OBJ->{'header'}, @{ $OBJ->{'data'} } ] ). ";\n";
